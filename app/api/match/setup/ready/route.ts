@@ -1,12 +1,12 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
-import { forbiddenUnlessTrustedOrigin } from "@/lib/security/apiGuards";
+import { forbiddenUnlessTrustedOrigin, parseUuid } from "@/lib/security/apiGuards";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
-const RATE_LIMIT = 5;
+const RATE_LIMIT = 10;
 const RATE_WINDOW_MS = 60_000;
 
-// POST /api/match/queue/leave
+// POST /api/match/setup/ready — 파티 구성 완료 버튼
 export async function POST(request: Request) {
   const originBlock = forbiddenUnlessTrustedOrigin(request);
   if (originBlock) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   const { allowed, retryAfterSec } = checkRateLimit(
-    `match-queue-leave:${user.id}`,
+    `match-setup-ready:${user.id}`,
     RATE_LIMIT,
     RATE_WINDOW_MS,
   );
@@ -35,22 +35,35 @@ export async function POST(request: Request) {
     );
   }
 
+  let body: { matchId?: string };
+  try {
+    body = (await request.json()) as { matchId?: string };
+  } catch {
+    return Response.json({ ok: false, errorKey: "invalid_request" }, { status: 400 });
+  }
+
+  const matchId = parseUuid(body.matchId);
+  if (!matchId) {
+    return Response.json({ ok: false, errorKey: "invalid_request" }, { status: 400 });
+  }
+
   if (!hasAdminClient()) {
     return Response.json({ ok: false, errorKey: "server_error" }, { status: 503 });
   }
 
   const admin = createAdminClient();
-  const { error } = await admin.rpc("leave_match_queue", { p_user_id: user.id });
+  const { error } = await admin.rpc("mark_setup_ready", {
+    p_user_id: user.id,
+    p_match_id: matchId,
+  });
 
   if (error) {
-    return Response.json({ ok: false, errorKey: "leave_failed" }, { status: 500 });
+    if (error.message.includes("match_not_found")) {
+      return Response.json({ ok: false, errorKey: "match_not_found" }, { status: 404 });
+    }
+
+    return Response.json({ ok: false, errorKey: "setup_ready_failed" }, { status: 400 });
   }
 
-  const { data: queueCount } = await supabase.rpc("count_queue_users");
-
-  return Response.json({
-    ok: true,
-    inQueue: false,
-    queueCount: typeof queueCount === "number" ? queueCount : 0,
-  });
+  return Response.json({ ok: true });
 }

@@ -1,4 +1,5 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
+import { forbiddenUnlessTrustedOrigin } from "@/lib/security/apiGuards";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
@@ -7,7 +8,12 @@ const RATE_WINDOW_MS = 20_000;
 
 // POST /api/presence/heartbeat
 // 로그인한 유저의 last_seen_at 갱신 (30초마다 클라이언트가 호출)
-export async function POST() {
+export async function POST(request: Request) {
+  const originBlock = forbiddenUnlessTrustedOrigin(request);
+  if (originBlock) {
+    return originBlock;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

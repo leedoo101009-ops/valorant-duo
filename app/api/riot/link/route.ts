@@ -1,4 +1,5 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
+import { forbiddenUnlessTrustedOrigin } from "@/lib/security/apiGuards";
 import { createClient } from "@/lib/supabase/server";
 import {
   fetchRiotAccountByRiotId,
@@ -15,6 +16,11 @@ const RATE_WINDOW_MS = 60_000;
 //
 // 흐름: 유저 입력 → Riot API 검증 → service_role RPC로 DB 저장
 export async function POST(request: Request) {
+  const originBlock = forbiddenUnlessTrustedOrigin(request);
+  if (originBlock) {
+    return originBlock;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

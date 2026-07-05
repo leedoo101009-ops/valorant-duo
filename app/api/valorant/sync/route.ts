@@ -1,4 +1,5 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
+import { forbiddenUnlessTrustedOrigin } from "@/lib/security/apiGuards";
 import { createClient } from "@/lib/supabase/server";
 import {
   collectRecentValorantMatches,
@@ -12,7 +13,12 @@ const RATE_WINDOW_MS = 60_000;
 
 // POST /api/valorant/sync
 // 로그인한 유저의 Riot 전적을 Riot API에서 가져와 DB에 저장합니다.
-export async function POST() {
+export async function POST(request: Request) {
+  const originBlock = forbiddenUnlessTrustedOrigin(request);
+  if (originBlock) {
+    return originBlock;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

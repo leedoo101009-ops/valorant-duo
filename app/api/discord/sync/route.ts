@@ -1,11 +1,17 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
+import { forbiddenUnlessTrustedOrigin } from "@/lib/security/apiGuards";
 import { createClient } from "@/lib/supabase/server";
 import { getDiscordIdentity } from "@/lib/discord/identity";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
 // POST /api/discord/sync
 // Supabase Auth에 연결된 Discord identity → profiles 테이블에 저장
-export async function POST() {
+export async function POST(request: Request) {
+  const originBlock = forbiddenUnlessTrustedOrigin(request);
+  if (originBlock) {
+    return originBlock;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

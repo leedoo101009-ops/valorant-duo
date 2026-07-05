@@ -122,7 +122,7 @@ function HeroHud({
 
 export default function HeroSection() {
   const { t } = useLanguage();
-  const { status, actionLoading, joinQueue, leaveQueue, dismissMatch, updateConnection } =
+  const { status, actionLoading, joinQueue, leaveQueue, dismissMatch, cancelSetup, markSetupReady, updateConnection } =
     useMatchQueue();
 
   return (
@@ -164,6 +164,8 @@ export default function HeroSection() {
             joinQueue={joinQueue}
             leaveQueue={leaveQueue}
             dismissMatch={dismissMatch}
+            cancelSetup={cancelSetup}
+            markSetupReady={markSetupReady}
             updateConnection={updateConnection}
           />
         </div>

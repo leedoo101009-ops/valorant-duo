@@ -1,4 +1,5 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
+import { forbiddenUnlessTrustedOrigin, parseUuid } from "@/lib/security/apiGuards";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,6 +25,11 @@ function mapConnectionError(message: string): string {
 // POST /api/match/connection
 // 매칭 참가자의 보이스 선택과 파티 코드를 저장합니다.
 export async function POST(request: Request) {
+  const originBlock = forbiddenUnlessTrustedOrigin(request);
+  if (originBlock) {
+    return originBlock;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -56,7 +62,8 @@ export async function POST(request: Request) {
   const voicePreference = body.voicePreference?.trim();
   const partyCode = body.partyCode?.trim();
 
-  if (!body.matchId || (!voicePreference && !partyCode)) {
+  const matchId = parseUuid(body.matchId);
+  if (!matchId || (!voicePreference && !partyCode)) {
     return Response.json({ ok: false, errorKey: "invalid_request" }, { status: 400 });
   }
 
@@ -78,7 +85,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { error } = await admin.rpc("update_match_connection", {
     p_user_id: user.id,
-    p_match_id: body.matchId,
+    p_match_id: matchId,
     p_voice_preference: voicePreference || null,
     p_party_code: partyCode || null,
   });

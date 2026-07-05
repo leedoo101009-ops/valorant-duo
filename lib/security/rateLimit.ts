@@ -27,5 +27,14 @@ export function checkRateLimit(
   }
 
   entry.count += 1;
+
+  if (store.size > 5000) {
+    for (const [key, value] of store) {
+      if (now >= value.resetAt) {
+        store.delete(key);
+      }
+    }
+  }
+
   return { allowed: true, retryAfterSec: 0 };
 }

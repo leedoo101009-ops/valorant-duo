@@ -3,14 +3,26 @@
 import { useCallback, useEffect, useState } from "react";
 import { QUEUE_STATUS_POLL_MS } from "@/lib/match/constants";
 
+export type MatchPhase = "connecting" | "setup" | "in_game";
+
 export type ActiveMatch = {
   id: string;
   createdAt: string;
+  phase: MatchPhase;
+  expiresAt: string | null;
+  secondsUntilExpiry: number | null;
+  setupExpiresAt: string | null;
+  setupSecondsUntilExpiry: number | null;
   myVoicePreference: VoicePreference | null;
   partnerVoicePreference: VoicePreference | null;
+  mySetupReady: boolean;
+  partnerSetupReady: boolean;
+  inGameAt: string | null;
   partyCode: string | null;
   partyCodeByMe: boolean;
   me: {
+    displayName: string | null;
+    riotId: string | null;
     discordUsername: string | null;
     discordId: string | null;
   };
@@ -24,11 +36,23 @@ export type ActiveMatch = {
 
 export type VoicePreference = "valorant" | "discord" | "none";
 
+export type DismissNotice = {
+  matchId: string;
+  reason:
+    | "partner_timeout"
+    | "match_timeout"
+    | "partner_left"
+    | "match_cancelled_offline"
+    | "setup_timeout"
+    | "partner_setup_cancelled";
+};
+
 export type MatchQueueStatus = {
   inQueue: boolean;
   queueCount: number;
   joinedAt: string | null;
   activeMatch: ActiveMatch | null;
+  dismissNotice: DismissNotice | null;
 };
 
 const defaultStatus: MatchQueueStatus = {
@@ -36,6 +60,7 @@ const defaultStatus: MatchQueueStatus = {
   queueCount: 0,
   joinedAt: null,
   activeMatch: null,
+  dismissNotice: null,
 };
 
 export function useMatchQueue() {
@@ -54,6 +79,7 @@ export function useMatchQueue() {
           queueCount: data.queueCount ?? 0,
           joinedAt: data.joinedAt ?? null,
           activeMatch: data.activeMatch ?? null,
+          dismissNotice: data.dismissNotice ?? null,
         });
       }
     } catch {
@@ -147,6 +173,53 @@ export function useMatchQueue() {
     }
   }
 
+  async function cancelSetup(matchId: string): Promise<{ ok: boolean; errorKey?: string }> {
+    setActionLoading(true);
+    try {
+      const response = await fetch("/api/match/setup/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId }),
+      });
+      const data = (await response.json()) as { ok?: boolean; errorKey?: string };
+
+      if (!response.ok || !data.ok) {
+        return { ok: false, errorKey: data.errorKey ?? "setup_cancel_failed" };
+      }
+
+      setStatus((prev) => ({ ...prev, activeMatch: null }));
+      void refresh();
+      return { ok: true };
+    } catch {
+      return { ok: false, errorKey: "setup_cancel_failed" };
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function markSetupReady(matchId: string): Promise<{ ok: boolean; errorKey?: string }> {
+    setActionLoading(true);
+    try {
+      const response = await fetch("/api/match/setup/ready", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId }),
+      });
+      const data = (await response.json()) as { ok?: boolean; errorKey?: string };
+
+      if (!response.ok || !data.ok) {
+        return { ok: false, errorKey: data.errorKey ?? "setup_ready_failed" };
+      }
+
+      await refresh();
+      return { ok: true };
+    } catch {
+      return { ok: false, errorKey: "setup_ready_failed" };
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function updateConnection(input: {
     matchId: string;
     voicePreference?: VoicePreference;
@@ -182,6 +255,8 @@ export function useMatchQueue() {
     joinQueue,
     leaveQueue,
     dismissMatch,
+    cancelSetup,
+    markSetupReady,
     updateConnection,
   };
 }

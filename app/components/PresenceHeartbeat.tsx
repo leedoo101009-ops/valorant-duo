@@ -12,6 +12,14 @@ async function sendHeartbeat() {
   }
 }
 
+function sendLeaveBeacon() {
+  try {
+    navigator.sendBeacon("/api/match/leave-on-exit", new Blob([], { type: "application/json" }));
+  } catch {
+    // beacon 실패 시 heartbeat 만료(expire_offline_duo_matches)가 백업
+  }
+}
+
 // 로그인한 유저만 마운트 — Navbar에서 user 있을 때 렌더
 export default function PresenceHeartbeat({ user }: { user: User }) {
   useEffect(() => {
@@ -29,9 +37,20 @@ export default function PresenceHeartbeat({ user }: { user: User }) {
 
     document.addEventListener("visibilitychange", onVisible);
 
+    const onPageHide = (event: PageTransitionEvent) => {
+      // bfcache 복원 시에는 매칭 유지
+      if (event.persisted) {
+        return;
+      }
+      sendLeaveBeacon();
+    };
+
+    window.addEventListener("pagehide", onPageHide);
+
     return () => {
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pagehide", onPageHide);
     };
   }, [user.id]);
 

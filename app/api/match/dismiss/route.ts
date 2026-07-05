@@ -1,4 +1,5 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
+import { forbiddenUnlessTrustedOrigin, parseUuid } from "@/lib/security/apiGuards";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
@@ -7,6 +8,11 @@ const RATE_WINDOW_MS = 60_000;
 
 // POST /api/match/dismiss
 export async function POST(request: Request) {
+  const originBlock = forbiddenUnlessTrustedOrigin(request);
+  if (originBlock) {
+    return originBlock;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -36,7 +42,8 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, errorKey: "invalid_request" }, { status: 400 });
   }
 
-  if (!body.matchId) {
+  const matchId = parseUuid(body.matchId);
+  if (!matchId) {
     return Response.json({ ok: false, errorKey: "invalid_request" }, { status: 400 });
   }
 
@@ -47,7 +54,7 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
   const { error } = await admin.rpc("dismiss_duo_match", {
     p_user_id: user.id,
-    p_match_id: body.matchId,
+    p_match_id: matchId,
   });
 
   if (error) {

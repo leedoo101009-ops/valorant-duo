@@ -1,5 +1,5 @@
 import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
-import { fetchPartnerPublicProfile } from "@/lib/match/partner";
+import { forbiddenUnlessTrustedOrigin } from "@/lib/security/apiGuards";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
@@ -10,11 +10,17 @@ function mapJoinError(message: string): string {
   if (message.includes("riot_required")) return "riot_required";
   if (message.includes("offline_required")) return "offline_required";
   if (message.includes("profile_not_found")) return "profile_not_found";
+  if (message.includes("active_match_exists")) return "active_match_exists";
   return "join_failed";
 }
 
 // POST /api/match/queue/join
-export async function POST() {
+export async function POST(request: Request) {
+  const originBlock = forbiddenUnlessTrustedOrigin(request);
+  if (originBlock) {
+    return originBlock;
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

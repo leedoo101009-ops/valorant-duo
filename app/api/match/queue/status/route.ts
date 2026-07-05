@@ -1,19 +1,42 @@
-import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
+import { runMatchExpireJobsIfDue } from "@/lib/match/expireJobs";
+import {
+  MATCH_RESPONSE_TIMEOUT_SECONDS,
+  MATCH_SETUP_TIMEOUT_SECONDS,
+} from "@/lib/match/constants";
 import { fetchPartnerPublicProfile } from "@/lib/match/partner";
+import {
+  getDismissNoticeForUser,
+  getMatchExpiresAt,
+  getSecondsUntilExpiry,
+  type DismissNoticeReason,
+} from "@/lib/match/timeout";
+import { hasAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
 const RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
 
+export type MatchPhase = "connecting" | "setup" | "in_game";
+
 export type ActiveMatchResponse = {
   id: string;
   createdAt: string;
+  phase: MatchPhase;
+  expiresAt: string | null;
+  secondsUntilExpiry: number | null;
+  setupExpiresAt: string | null;
+  setupSecondsUntilExpiry: number | null;
   myVoicePreference: "valorant" | "discord" | "none" | null;
   partnerVoicePreference: "valorant" | "discord" | "none" | null;
+  mySetupReady: boolean;
+  partnerSetupReady: boolean;
+  inGameAt: string | null;
   partyCode: string | null;
   partyCodeByMe: boolean;
   me: {
+    displayName: string | null;
+    riotId: string | null;
     discordUsername: string | null;
     discordId: string | null;
   };
@@ -25,6 +48,11 @@ export type ActiveMatchResponse = {
   };
 };
 
+export type DismissNoticeResponse = {
+  matchId: string;
+  reason: DismissNoticeReason;
+};
+
 async function getActiveMatchForUser(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
@@ -32,9 +60,9 @@ async function getActiveMatchForUser(
   const { data: match } = await supabase
     .from("duo_matches")
     .select(
-      "id, user_a_id, user_b_id, created_at, user_a_voice_preference, user_b_voice_preference, party_code, party_code_by",
+      "id, user_a_id, user_b_id, status, created_at, match_phase, setup_started_at, user_a_setup_ready, user_b_setup_ready, in_game_at, user_a_voice_preference, user_b_voice_preference, party_code, party_code_by",
     )
-    .eq("status", "active")
+    .in("status", ["active", "in_game"])
     .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
     .maybeSingle();
 
@@ -47,7 +75,7 @@ async function getActiveMatchForUser(
   const partner = await fetchPartnerPublicProfile(partnerId);
   const { data: me } = await supabase
     .from("profiles")
-    .select("discord_username, discord_id")
+    .select("display_name, riot_id, discord_username, discord_id")
     .eq("id", userId)
     .maybeSingle();
 
@@ -61,16 +89,39 @@ async function getActiveMatchForUser(
   const partnerVoicePreference = isUserA
     ? match.user_b_voice_preference
     : match.user_a_voice_preference;
+  const mySetupReady = isUserA ? match.user_a_setup_ready : match.user_b_setup_ready;
+  const partnerSetupReady = isUserA ? match.user_b_setup_ready : match.user_a_setup_ready;
   const sharePartnerDiscord = partnerVoicePreference === "discord";
+
+  const phase = (match.match_phase ?? "connecting") as MatchPhase;
+  const voiceIncomplete = !myVoicePreference || !partnerVoicePreference;
+  const voiceExpiresAt =
+    phase === "connecting" && voiceIncomplete
+      ? getMatchExpiresAt(match.created_at, MATCH_RESPONSE_TIMEOUT_SECONDS)
+      : null;
+  const setupExpiresAt =
+    phase === "setup" && match.setup_started_at
+      ? getMatchExpiresAt(match.setup_started_at, MATCH_SETUP_TIMEOUT_SECONDS)
+      : null;
 
   return {
     id: match.id,
     createdAt: match.created_at,
+    phase,
+    expiresAt: voiceExpiresAt,
+    secondsUntilExpiry: voiceExpiresAt ? getSecondsUntilExpiry(voiceExpiresAt) : null,
+    setupExpiresAt,
+    setupSecondsUntilExpiry: setupExpiresAt ? getSecondsUntilExpiry(setupExpiresAt) : null,
     myVoicePreference,
     partnerVoicePreference,
+    mySetupReady: Boolean(mySetupReady),
+    partnerSetupReady: Boolean(partnerSetupReady),
+    inGameAt: match.in_game_at,
     partyCode: match.party_code,
     partyCodeByMe: match.party_code_by === userId,
     me: {
+      displayName: me?.display_name ?? null,
+      riotId: me?.riot_id ?? null,
       discordUsername: me?.discord_username ?? null,
       discordId: me?.discord_id ?? null,
     },
@@ -81,6 +132,37 @@ async function getActiveMatchForUser(
       discordId: sharePartnerDiscord ? partner.discordId : null,
     },
   };
+}
+
+async function getRecentDismissNotice(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<DismissNoticeResponse | null> {
+  const since = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+
+  const { data: match } = await supabase
+    .from("duo_matches")
+    .select(
+      "id, user_a_id, user_b_id, user_a_voice_preference, user_b_voice_preference, cancel_reason, offline_user_id, cancelled_by_user_id, updated_at",
+    )
+    .eq("status", "cancelled")
+    .in("cancel_reason", [
+      "voice_response_timeout",
+      "partner_offline",
+      "setup_timeout",
+      "setup_cancelled",
+    ])
+    .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+    .gte("updated_at", since)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!match) {
+    return null;
+  }
+
+  return getDismissNoticeForUser(match, userId);
 }
 
 // GET /api/match/queue/status
@@ -123,15 +205,16 @@ export async function GET(request: Request) {
       inQueue: false,
       joinedAt: null,
       activeMatch: null,
+      dismissNotice: null,
     });
   }
 
   if (hasAdminClient()) {
-    const admin = createAdminClient();
-    await admin.rpc("process_match_queue");
+    await runMatchExpireJobsIfDue();
   }
 
   const activeMatch = await getActiveMatchForUser(supabase, user.id);
+  const dismissNotice = activeMatch ? null : await getRecentDismissNotice(supabase, user.id);
 
   if (activeMatch) {
     return Response.json({
@@ -140,6 +223,7 @@ export async function GET(request: Request) {
       inQueue: false,
       joinedAt: null,
       activeMatch,
+      dismissNotice: null,
     });
   }
 
@@ -155,5 +239,6 @@ export async function GET(request: Request) {
     inQueue: Boolean(entry),
     joinedAt: entry?.joined_at ?? null,
     activeMatch: null,
+    dismissNotice,
   });
 }
