@@ -110,6 +110,117 @@ export const translations = {
       discord: "DISCORD",
       copyright: "© 2026 Valorant Duo Match",
     },
+    legal: {
+      backHome: "Back to home",
+      lastUpdated: "Last updated: July 7, 2026",
+      contactBoxLabel: "CONTACT EMAIL",
+      contactBoxHint: "Change this address in site.contact.ts at the project root.",
+      terms: {
+        label: "LEGAL",
+        title: "Terms of Service",
+        sections: [
+          {
+            title: "1. About This Service",
+            paragraphs: [
+              "Valorant Duo Match (“the Service”) helps players find duo partners in real time. The Service is an independent fan project and is not endorsed by, affiliated with, or sponsored by Riot Games, Inc.",
+              "By creating an account or using the Service, you agree to these Terms.",
+            ],
+          },
+          {
+            title: "2. Accounts",
+            paragraphs: [
+              "You must provide accurate information and keep your login credentials secure. You are responsible for activity on your account.",
+              "You must link a valid Riot ID before joining the match queue. You may optionally connect Discord for voice coordination.",
+            ],
+          },
+          {
+            title: "3. Acceptable Use",
+            paragraphs: [
+              "You may not use the Service for cheating, harassment, fraud, scraping, automated abuse, or any activity that violates Riot Games policies or applicable law.",
+              "Repeatedly leaving matches without notice, intentionally disrupting matches, or abusing the queue may result in restrictions or account suspension.",
+            ],
+          },
+          {
+            title: "4. Matching & Availability",
+            paragraphs: [
+              "Matching is provided on a best-effort basis. We do not guarantee a partner, rank compatibility, voice quality, or in-game results.",
+              "The Service may change, pause, or end features at any time for maintenance, security, or policy compliance.",
+            ],
+          },
+          {
+            title: "5. Third-Party Services",
+            paragraphs: [
+              "The Service uses Riot Games API data under the Riot Developer Portal policies. Riot data belongs to Riot Games and its licensors.",
+              "We also use Supabase (auth/database), Vercel (hosting), and Discord OAuth when you choose to connect Discord. Your use of those services may be subject to their own terms.",
+            ],
+          },
+          {
+            title: "6. Disclaimer",
+            paragraphs: [
+              "The Service is provided “as is” without warranties of any kind. To the fullest extent permitted by law, we are not liable for indirect, incidental, or consequential damages arising from your use of the Service.",
+              "Valorant and Riot Games are trademarks or registered trademarks of Riot Games, Inc.",
+            ],
+          },
+          {
+            title: "7. Changes & Contact",
+            paragraphs: [
+              "We may update these Terms. Continued use after changes means you accept the updated Terms.",
+              "Questions about these Terms may be sent to the contact address listed in our Privacy Policy.",
+            ],
+          },
+        ],
+      },
+      privacy: {
+        label: "LEGAL",
+        title: "Privacy Policy",
+        sections: [
+          {
+            title: "1. Information We Collect",
+            paragraphs: [
+              "Account data: email address and authentication identifiers from Supabase Auth.",
+              "Game profile data: Riot ID, Riot PUUID, and Valorant match history when you sync or link your account.",
+              "Social data: Discord username and Discord user ID if you connect Discord.",
+              "Service data: online presence (last seen timestamp), match queue status, and duo match connection preferences (voice choice, party code).",
+            ],
+          },
+          {
+            title: "2. How We Use Information",
+            paragraphs: [
+              "We use this information to operate the Service: login, duo matching, showing match history, connecting partners after a match, and preventing abuse.",
+              "We do not sell your personal information.",
+            ],
+          },
+          {
+            title: "3. Sharing & Processors",
+            paragraphs: [
+              "Data is stored in Supabase and served through Vercel. Riot API is called server-side to verify accounts and fetch match data. Discord OAuth is used only if you choose to link Discord.",
+              "We may disclose information if required by law or to protect the Service and its users.",
+            ],
+          },
+          {
+            title: "4. Retention & Your Choices",
+            paragraphs: [
+              "We retain data while your account is active and as needed to operate the Service. Match and queue records may be kept for a limited period for security and debugging.",
+              "You may stop using the Service at any time. To request account or data deletion, contact us using the address below.",
+            ],
+          },
+          {
+            title: "5. Security & Children",
+            paragraphs: [
+              "We use industry-standard practices such as server-side API keys, row-level security, and authenticated API routes. No method of transmission over the Internet is 100% secure.",
+              "The Service is not directed to children under 13 (or the minimum age required in your region).",
+            ],
+          },
+          {
+            title: "6. Contact",
+            paragraphs: [
+              "For privacy questions or deletion requests, use the contact email shown below.",
+              "This policy may be updated. The “Last updated” date at the top shows the latest revision.",
+            ],
+          },
+        ],
+      },
+    },
     auth: {
       label: "ACCOUNT",
       loginTitle: "Login",
@@ -397,6 +508,117 @@ export const translations = {
       privacy: "개인정보",
       discord: "디스코드",
       copyright: "© 2026 Valorant Duo Match",
+    },
+    legal: {
+      backHome: "홈으로",
+      lastUpdated: "최종 수정일: 2026년 7월 7일",
+      contactBoxLabel: "문의 이메일",
+      contactBoxHint: "이메일 변경: 프로젝트 맨 위 site.contact.ts 파일만 수정하면 됩니다.",
+      terms: {
+        label: "법적 고지",
+        title: "이용약관",
+        sections: [
+          {
+            title: "1. 서비스 소개",
+            paragraphs: [
+              "Valorant Duo Match(이하 “서비스”)는 발로란트 듀오 파트너를 실시간으로 찾는 데 도움을 주는 독립 팬 프로젝트입니다. 본 서비스는 Riot Games, Inc.의 공식 서비스가 아니며, Riot Games와 제휴·후원·승인 관계가 없습니다.",
+              "계정을 만들거나 서비스를 이용하면 본 약관에 동의한 것으로 봅니다.",
+            ],
+          },
+          {
+            title: "2. 계정",
+            paragraphs: [
+              "정확한 정보를 제공하고 로그인 정보를 안전하게 관리해야 합니다. 계정에서 발생하는 활동에 대한 책임은 이용자에게 있습니다.",
+              "매칭 큐 참여 전 Riot ID 연동이 필요합니다. Discord 연동은 보이스 조율을 위한 선택 사항입니다.",
+            ],
+          },
+          {
+            title: "3. 이용 규칙",
+            paragraphs: [
+              "치팅, 괴롭힘, 사기, 무단 스크래핑, 자동화 악용 등 Riot Games 정책 또는 관련 법률을 위반하는 행위는 금지됩니다.",
+              "매칭 후 무단 이탈, 고의적 방해, 큐 악용 등이 반복되면 이용 제한 또는 계정 정지가 될 수 있습니다.",
+            ],
+          },
+          {
+            title: "4. 매칭 및 서비스 제공",
+            paragraphs: [
+              "매칭은 최선을 다해 제공되지만, 파트너 매칭·티어 일치·보이스 품질·게임 결과를 보장하지 않습니다.",
+              "유지보수, 보안, 정책 준수 등의 이유로 기능이 변경·중단될 수 있습니다.",
+            ],
+          },
+          {
+            title: "5. 제3자 서비스",
+            paragraphs: [
+              "본 서비스는 Riot Developer Portal 정책에 따라 Riot Games API 데이터를 사용합니다. Riot 데이터에 대한 권리는 Riot Games 및 해당 라이선스 보유자에게 있습니다.",
+              "Supabase(인증·DB), Vercel(호스팅), Discord OAuth(선택 연동)를 사용합니다. 각 서비스의 이용약관이 별도로 적용될 수 있습니다.",
+            ],
+          },
+          {
+            title: "6. 면책",
+            paragraphs: [
+              "서비스는 “있는 그대로” 제공됩니다. 법이 허용하는 범위 내에서, 간접·부수·결과적 손해에 대해 책임을 지지 않습니다.",
+              "Valorant 및 Riot Games는 Riot Games, Inc.의 상표 또는 등록상표입니다.",
+            ],
+          },
+          {
+            title: "7. 변경 및 문의",
+            paragraphs: [
+              "약관이 변경될 수 있으며, 변경 후 서비스를 계속 이용하면 변경된 약관에 동의한 것으로 봅니다.",
+              "약관 관련 문의는 개인정보처리방침에 기재된 연락처로 보내 주세요.",
+            ],
+          },
+        ],
+      },
+      privacy: {
+        label: "법적 고지",
+        title: "개인정보처리방침",
+        sections: [
+          {
+            title: "1. 수집하는 정보",
+            paragraphs: [
+              "계정 정보: 이메일 주소, Supabase Auth 식별자.",
+              "게임 정보: Riot ID, Riot PUUID, 전적 동기화 시 Valorant 경기 기록.",
+              "소셜 정보: Discord 연동 시 Discord 사용자명 및 Discord ID.",
+              "서비스 이용 정보: 온라인 상태(last seen), 매칭 큐 상태, 듀오 매칭 연결 설정(보이스 선택, 파티 코드).",
+            ],
+          },
+          {
+            title: "2. 이용 목적",
+            paragraphs: [
+              "로그인, 실시간 듀오 매칭, 전적 표시, 매칭 후 파트너 연결, 악용 방지 등 서비스 운영을 위해 사용합니다.",
+              "개인정보를 판매하지 않습니다.",
+            ],
+          },
+          {
+            title: "3. 제공 및 처리 위탁",
+            paragraphs: [
+              "데이터는 Supabase에 저장되고 Vercel을 통해 제공됩니다. Riot API는 서버에서만 호출하여 계정 확인 및 전적 조회에 사용합니다. Discord OAuth는 이용자가 연동을 선택한 경우에만 사용합니다.",
+              "법령에 따른 요청 또는 서비스·이용자 보호를 위해 필요한 경우 정보를 공개할 수 있습니다.",
+            ],
+          },
+          {
+            title: "4. 보관 및 이용자 권리",
+            paragraphs: [
+              "계정이 활성화된 동안 및 서비스 운영에 필요한 기간 동안 보관합니다. 매칭·큐 기록은 보안 및 장애 대응을 위해 제한적으로 보관될 수 있습니다.",
+              "언제든 서비스 이용을 중단할 수 있습니다. 계정·데이터 삭제 요청은 아래 연락처로 문의해 주세요.",
+            ],
+          },
+          {
+            title: "5. 보안 및 아동",
+            paragraphs: [
+              "서버 전용 API 키, RLS, 인증 API 등 일반적인 보안 조치를 사용합니다. 인터넷 전송 방식은 100% 안전을 보장할 수 없습니다.",
+              "본 서비스는 만 13세 미만(또는 해당 지역 최소 연령 미만) 아동을 대상으로 하지 않습니다.",
+            ],
+          },
+          {
+            title: "6. 문의",
+            paragraphs: [
+              "개인정보 문의·삭제 요청은 아래 연락처를 이용해 주세요.",
+              "본 방침은 업데이트될 수 있으며, 상단 ‘최종 수정일’을 확인해 주세요.",
+            ],
+          },
+        ],
+      },
     },
     auth: {
       label: "계정",
