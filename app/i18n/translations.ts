@@ -114,7 +114,6 @@ export const translations = {
       backHome: "Back to home",
       lastUpdated: "Last updated: July 7, 2026",
       contactBoxLabel: "CONTACT EMAIL",
-      contactBoxHint: "Change this address in site.contact.ts at the project root.",
       terms: {
         label: "LEGAL",
         title: "Terms of Service",
@@ -513,7 +512,6 @@ export const translations = {
       backHome: "홈으로",
       lastUpdated: "최종 수정일: 2026년 7월 7일",
       contactBoxLabel: "문의 이메일",
-      contactBoxHint: "이메일 변경: 프로젝트 맨 위 site.contact.ts 파일만 수정하면 됩니다.",
       terms: {
         label: "법적 고지",
         title: "이용약관",

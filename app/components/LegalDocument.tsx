@@ -53,7 +53,6 @@ export default function LegalDocument({ type }: LegalDocumentProps) {
           >
             {SITE_CONTACT_EMAIL}
           </a>
-          <p className="mt-3 text-xs text-[#666]">{t.legal.contactBoxHint}</p>
         </div>
       </div>
     </main>
