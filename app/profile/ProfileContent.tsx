@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
+import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import type { PenaltyHistoryResponse, PenaltyRecord } from "@/app/api/match/penalty/history/route";
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import ReputationBadge from "../components/ReputationBadge";
 import { useLanguage } from "../context/LanguageContext";
+import { GRADE_STYLES } from "@/lib/reputation/scoring";
+import type { ReviewTagStat, UserReputation } from "@/lib/reputation/types";
 import { getQueueLabel } from "@/lib/riot/agents";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/supabase/profile";
@@ -13,6 +17,8 @@ import type { ValorantMatch } from "@/lib/supabase/valorant";
 type ProfileContentProps = {
   profile: Profile;
   initialMatches: ValorantMatch[];
+  reputation: UserReputation | null;
+  tagStats: ReviewTagStat[];
 };
 
 function formatPlayedAt(iso: string, locale: string) {
@@ -83,6 +89,8 @@ function DiscordLinkHandler({
 function ProfileContentInner({
   profile: initialProfile,
   initialMatches,
+  reputation,
+  tagStats,
 }: ProfileContentProps) {
   const { t, locale } = useLanguage();
   const router = useRouter();
@@ -92,15 +100,41 @@ function ProfileContentInner({
   const [riotIdInput, setRiotIdInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [linkingRiot, setLinkingRiot] = useState(false);
+  const [unlinkingRiot, setUnlinkingRiot] = useState(false);
+  const [unlinkingDiscord, setUnlinkingDiscord] = useState(false);
   const [syncingMatches, setSyncingMatches] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
+  const [penalties, setPenalties] = useState<PenaltyRecord[]>([]);
+  const [penaltyCount, setPenaltyCount] = useState(0);
+  const [cooldownUntil, setCooldownUntil] = useState<string | null>(null);
+  const [isCoolingDown, setIsCoolingDown] = useState(false);
+
+  const fetchPenalties = useCallback(async () => {
+    try {
+      const res = await fetch("/api/match/penalty/history");
+      if (!res.ok) return;
+      const data = (await res.json()) as PenaltyHistoryResponse;
+      if (data.ok) {
+        setPenalties(data.penalties);
+        setPenaltyCount(data.penaltyCount);
+        setCooldownUntil(data.cooldownUntil);
+        setIsCoolingDown(data.isCoolingDown);
+      }
+    } catch {
+      // 조용히 실패
+    }
+  }, []);
 
   useEffect(() => {
     setProfile(initialProfile);
     setMatches(initialMatches);
     setDisplayName(initialProfile.display_name ?? "");
   }, [initialProfile, initialMatches]);
+
+  useEffect(() => {
+    void fetchPenalties();
+  }, [fetchPenalties]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -155,6 +189,58 @@ function ProfileContentInner({
     setRiotIdInput("");
     setMessage(t.profile.linkRiotSuccess);
     setLinkingRiot(false);
+    router.refresh();
+  }
+
+  async function handleUnlinkRiot() {
+    if (!profile.riot_id) return;
+    setUnlinkingRiot(true);
+    setMessage(null);
+    setIsError(false);
+
+    const response = await fetch("/api/riot/unlink", { method: "POST" });
+    const data = (await response.json()) as { ok?: boolean; errorKey?: string };
+
+    if (!response.ok || !data.ok) {
+      setIsError(true);
+      if (data.errorKey === "active_match_exists") {
+        setMessage(t.profile.unlinkActiveMatch);
+      } else {
+        setMessage(t.profile.unlinkFailed);
+      }
+      setUnlinkingRiot(false);
+      return;
+    }
+
+    setProfile((prev) => ({ ...prev, riot_id: null }));
+    setMessage(t.profile.unlinkRiotSuccess);
+    setUnlinkingRiot(false);
+    router.refresh();
+  }
+
+  async function handleUnlinkDiscord() {
+    if (!profile.discord_username) return;
+    setUnlinkingDiscord(true);
+    setMessage(null);
+    setIsError(false);
+
+    const response = await fetch("/api/discord/unlink", { method: "POST" });
+    const data = (await response.json()) as { ok?: boolean; errorKey?: string };
+
+    if (!response.ok || !data.ok) {
+      setIsError(true);
+      if (data.errorKey === "active_match_exists") {
+        setMessage(t.profile.unlinkActiveMatch);
+      } else {
+        setMessage(t.profile.unlinkFailed);
+      }
+      setUnlinkingDiscord(false);
+      return;
+    }
+
+    setProfile((prev) => ({ ...prev, discord_username: null, discord_id: null }));
+    setMessage(t.profile.unlinkDiscordSuccess);
+    setUnlinkingDiscord(false);
     router.refresh();
   }
 
@@ -236,20 +322,44 @@ function ProfileContentInner({
                 <dt className="font-display text-[10px] tracking-widest text-[#555]">
                   {t.profile.riotAccount}
                 </dt>
-                <dd className="mt-1 text-sm text-white">
-                  {profile.riot_id ?? (
-                    <span className="text-[#555]">{t.profile.notConnected}</span>
-                  )}
+                <dd className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-sm text-white">
+                    {profile.riot_id ?? (
+                      <span className="text-[#555]">{t.profile.notConnected}</span>
+                    )}
+                  </span>
+                  {profile.riot_id ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleUnlinkRiot()}
+                      disabled={unlinkingRiot}
+                      className="font-display text-[10px] tracking-widest text-[#888] underline transition-colors hover:text-[#ff4655] disabled:opacity-50"
+                    >
+                      {unlinkingRiot ? t.profile.unlinking : t.profile.unlinkRiot}
+                    </button>
+                  ) : null}
                 </dd>
               </div>
               <div>
                 <dt className="font-display text-[10px] tracking-widest text-[#555]">
                   {t.profile.discordAccount}
                 </dt>
-                <dd className="mt-1 text-sm text-white">
-                  {profile.discord_username ?? (
-                    <span className="text-[#555]">{t.profile.notConnected}</span>
-                  )}
+                <dd className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-sm text-white">
+                    {profile.discord_username ?? (
+                      <span className="text-[#555]">{t.profile.notConnected}</span>
+                    )}
+                  </span>
+                  {profile.discord_username ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleUnlinkDiscord()}
+                      disabled={unlinkingDiscord}
+                      className="font-display text-[10px] tracking-widest text-[#888] underline transition-colors hover:text-[#ff4655] disabled:opacity-50"
+                    >
+                      {unlinkingDiscord ? t.profile.unlinking : t.profile.unlinkDiscord}
+                    </button>
+                  ) : null}
                 </dd>
               </div>
             </dl>
@@ -283,6 +393,165 @@ function ProfileContentInner({
                   {t.profile.linkDiscordHint}
                 </p>
               </div>
+            )}
+          </div>
+
+          <div className="mt-8 border border-[#222] bg-[#0a0a0a] p-5">
+            <p className="font-display text-[10px] tracking-[0.25em] text-[#ff4655]">
+              {t.profile.reputationTitle}
+            </p>
+            <p className="mt-2 text-sm text-[#888]">{t.profile.reputationSubtitle}</p>
+
+            <dl className="mt-5 grid gap-4 sm:grid-cols-3">
+              <div>
+                <dt className="font-display text-[10px] tracking-widest text-[#555]">
+                  {t.profile.mannerGrade}
+                </dt>
+                <dd className="mt-2">
+                  {reputation?.isNewUser ? (
+                    <span className="inline-flex items-center gap-1 border border-[#555]/60 bg-[#111] px-2 py-1 font-display text-[10px] tracking-widest text-[#aaa]">
+                      🆕 {t.profile.newUserBadge}
+                    </span>
+                  ) : reputation?.mannerGrade ? (
+                    <span
+                      className={`inline-flex border px-2 py-1 font-display text-xs font-bold tracking-widest ${GRADE_STYLES[reputation.mannerGrade]}`}
+                    >
+                      {t.profile.gradePrefix} {reputation.mannerGrade}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-[#555]">—</span>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-display text-[10px] tracking-widest text-[#555]">
+                  {t.profile.trustScore}
+                </dt>
+                <dd className="mt-2 font-display text-2xl font-bold text-white">
+                  {reputation?.trustScore ?? profile.trust_score ?? 70}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-display text-[10px] tracking-widest text-[#555]">
+                  {t.profile.reviewCount}
+                </dt>
+                <dd className="mt-2 font-display text-2xl font-bold text-white">
+                  {reputation?.reviewCount ?? profile.review_count ?? 0}
+                </dd>
+              </div>
+            </dl>
+
+            {reputation ? (
+              <ReputationBadge
+                reputation={reputation}
+                labels={{
+                  newUser: t.matchReview.newUser,
+                  trustLabel: t.matchReview.trustLabel,
+                  gradePrefix: t.matchReview.gradePrefix,
+                  tags: t.matchReview.tags,
+                }}
+              />
+            ) : null}
+
+            <div className="mt-6">
+              <p className="font-display text-[10px] tracking-widest text-[#555]">
+                {t.profile.tagStatsTitle}
+              </p>
+              {tagStats.length === 0 ? (
+                <p className="mt-3 text-sm text-[#888]">{t.profile.noTagStats}</p>
+              ) : (
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {tagStats.map((stat) => (
+                    <li
+                      key={`${stat.kind}-${stat.tag}`}
+                      className={`border px-3 py-2 font-display text-[10px] tracking-widest ${
+                        stat.kind === "positive"
+                          ? "border-[#0fbcbf]/40 text-[#0fbcbf]"
+                          : "border-[#ff4655]/40 text-[#ff4655]"
+                      }`}
+                    >
+                      {(t.matchReview.tags as Record<string, string>)[stat.tag] ?? stat.tag} · {stat.count}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* 페널티 기록 */}
+          <div className="mt-8 border border-[#222] bg-[#0a0a0a] p-5">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-display text-[10px] tracking-[0.25em] text-[#ff4655]">
+                {t.profile.penaltyTitle}
+              </p>
+              <span className="font-display text-xs text-[#888]">
+                {t.profile.penaltyCount}: {penaltyCount}
+              </span>
+            </div>
+
+            {/* 현재 쿨다운 표시 */}
+            {isCoolingDown && cooldownUntil ? (
+              <div className="mt-3 flex items-center gap-3 border border-[#ff4655]/50 bg-[#ff4655]/10 px-4 py-3">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-[#ff4655]" />
+                <p className="font-display text-xs tracking-widest text-[#ff4655]">
+                  {t.profile.cooldownActive}:{" "}
+                  {new Date(cooldownUntil).toLocaleTimeString(
+                    locale === "ko" ? "ko-KR" : "en-US",
+                    { hour: "2-digit", minute: "2-digit" },
+                  )}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 font-display text-[10px] tracking-widest text-[#0fbcbf]">
+                {t.profile.cooldownLifted}
+              </p>
+            )}
+
+            {penalties.length === 0 ? (
+              <p className="mt-4 text-sm text-[#888]">{t.profile.noPenalties}</p>
+            ) : (
+              <ul className="mt-4 space-y-2">
+                {penalties.map((p) => {
+                  const countAfter = p.penalty_count_after;
+                  let badge: string;
+                  let badgeColor: string;
+                  if (countAfter >= 5) {
+                    badge = t.profile.penaltyCooldown15;
+                    badgeColor = "border-[#ff4655]/60 bg-[#ff4655]/10 text-[#ff4655]";
+                  } else if (countAfter === 4) {
+                    badge = t.profile.penaltyCooldown5;
+                    badgeColor = "border-[#fbbf24]/60 bg-[#fbbf24]/10 text-[#fbbf24]";
+                  } else {
+                    badge = t.profile.penaltyWarning;
+                    badgeColor = "border-[#888]/50 bg-[#111] text-[#aaa]";
+                  }
+                  const reasons = t.profile.penaltyReasons as Record<string, string>;
+                  const reasonLabel = reasons[p.reason] ?? p.reason;
+                  const dateStr = new Date(p.created_at).toLocaleDateString(
+                    locale === "ko" ? "ko-KR" : "en-US",
+                    { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" },
+                  );
+
+                  return (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 border border-[#1a1a1a] bg-black/40 px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm text-white">{reasonLabel}</p>
+                        <p className="mt-0.5 font-display text-[10px] tracking-widest text-[#555]">
+                          {dateStr}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 border px-2 py-1 font-display text-[10px] tracking-widest ${badgeColor}`}
+                      >
+                        {badge}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
 

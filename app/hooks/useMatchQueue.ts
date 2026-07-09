@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { QUEUE_STATUS_POLL_MS } from "@/lib/match/constants";
+import type { PendingMatchReview, UserReputation } from "@/lib/reputation/types";
 
 export type MatchPhase = "connecting" | "setup" | "in_game";
 
@@ -20,6 +21,8 @@ export type ActiveMatch = {
   inGameAt: string | null;
   partyCode: string | null;
   partyCodeByMe: boolean;
+  myAcceptedPartnerNoVoice: boolean;
+  partnerAcceptedNoVoice: boolean;
   me: {
     displayName: string | null;
     riotId: string | null;
@@ -31,6 +34,7 @@ export type ActiveMatch = {
     riotId: string | null;
     discordUsername: string | null;
     discordId: string | null;
+    reputation: UserReputation | null;
   };
 };
 
@@ -53,6 +57,7 @@ export type MatchQueueStatus = {
   joinedAt: string | null;
   activeMatch: ActiveMatch | null;
   dismissNotice: DismissNotice | null;
+  pendingReview: PendingMatchReview | null;
 };
 
 const defaultStatus: MatchQueueStatus = {
@@ -61,6 +66,7 @@ const defaultStatus: MatchQueueStatus = {
   joinedAt: null,
   activeMatch: null,
   dismissNotice: null,
+  pendingReview: null,
 };
 
 export function useMatchQueue() {
@@ -80,6 +86,7 @@ export function useMatchQueue() {
           joinedAt: data.joinedAt ?? null,
           activeMatch: data.activeMatch ?? null,
           dismissNotice: data.dismissNotice ?? null,
+          pendingReview: data.pendingReview ?? null,
         });
       }
     } catch {
@@ -97,23 +104,52 @@ export function useMatchQueue() {
     return () => window.clearInterval(intervalId);
   }, [refresh]);
 
-  async function joinQueue(): Promise<{ ok: boolean; errorKey?: string }> {
+const JOIN_TIMEOUT_MS = 15_000;
+
+  async function joinQueue(): Promise<{
+    ok: boolean;
+    errorKey?: string;
+    cooldownUntil?: string;
+  }> {
     setActionLoading(true);
     try {
-      const response = await fetch("/api/match/queue/join", { method: "POST" });
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), JOIN_TIMEOUT_MS);
+
+      const response = await fetch("/api/match/queue/join", {
+        method: "POST",
+        signal: controller.signal,
+      });
+      window.clearTimeout(timeoutId);
+
       const data = (await response.json()) as {
         ok?: boolean;
         errorKey?: string;
+        cooldownUntil?: string;
         queueCount?: number;
       };
 
       if (!response.ok || !data.ok) {
-        return { ok: false, errorKey: data.errorKey ?? "join_failed" };
+        return {
+          ok: false,
+          errorKey: data.errorKey ?? "join_failed",
+          cooldownUntil: data.cooldownUntil,
+        };
       }
 
-      await refresh();
+      // refresh 전에 즉시 큐 상태 반영 — status poll 실패해도 UI가 멈추지 않음
+      setStatus((prev) => ({
+        ...prev,
+        inQueue: true,
+        queueCount: data.queueCount ?? prev.queueCount,
+      }));
+
+      void refresh();
       return { ok: true };
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return { ok: false, errorKey: "join_failed" };
+      }
       return { ok: false, errorKey: "join_failed" };
     } finally {
       setActionLoading(false);
@@ -247,6 +283,57 @@ export function useMatchQueue() {
     }
   }
 
+  async function submitReview(input: {
+    matchId: string;
+    positiveTags: string[];
+    negativeTags: string[];
+  }): Promise<{ ok: boolean; errorKey?: string }> {
+    setActionLoading(true);
+    try {
+      const response = await fetch("/api/match/review/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+      const data = (await response.json()) as { ok?: boolean; errorKey?: string };
+
+      if (!response.ok || !data.ok) {
+        return { ok: false, errorKey: data.errorKey ?? "review_submit_failed" };
+      }
+
+      setStatus((prev) => ({ ...prev, pendingReview: null }));
+      void refresh();
+      return { ok: true };
+    } catch {
+      return { ok: false, errorKey: "review_submit_failed" };
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function acceptPartnerNoVoice(matchId: string): Promise<{ ok: boolean; errorKey?: string }> {
+    setActionLoading(true);
+    try {
+      const response = await fetch("/api/match/no-voice/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId }),
+      });
+      const data = (await response.json()) as { ok?: boolean; errorKey?: string };
+
+      if (!response.ok || !data.ok) {
+        return { ok: false, errorKey: data.errorKey ?? "accept_failed" };
+      }
+
+      await refresh();
+      return { ok: true };
+    } catch {
+      return { ok: false, errorKey: "accept_failed" };
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   return {
     status,
     loading,
@@ -258,5 +345,7 @@ export function useMatchQueue() {
     cancelSetup,
     markSetupReady,
     updateConnection,
+    submitReview,
+    acceptPartnerNoVoice,
   };
 }

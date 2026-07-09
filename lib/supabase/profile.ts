@@ -9,6 +9,8 @@ export type Profile = {
   discord_id: string | null;
   last_match_sync_at?: string | null;
   last_seen_at?: string | null;
+  trust_score?: number | null;
+  review_count?: number | null;
   created_at: string;
   updated_at: string;
 };

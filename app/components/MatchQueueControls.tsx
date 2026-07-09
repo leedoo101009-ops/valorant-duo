@@ -8,6 +8,8 @@ import { useLanguage } from "../context/LanguageContext";
 import { createClient } from "@/lib/supabase/client";
 import MatchInGamePanel from "./MatchInGamePanel";
 import MatchGuidelinesModal from "./MatchGuidelinesModal";
+import MatchReviewModal from "./MatchReviewModal";
+import ReputationBadge from "./ReputationBadge";
 import {
   hasSeenMatchGuidelines,
   markMatchGuidelinesSeen,
@@ -18,7 +20,7 @@ import type { ActiveMatch, MatchQueueStatus, VoicePreference } from "../hooks/us
 type MatchQueueControlsProps = {
   status: MatchQueueStatus;
   actionLoading: boolean;
-  joinQueue: () => Promise<{ ok: boolean; errorKey?: string }>;
+  joinQueue: () => Promise<{ ok: boolean; errorKey?: string; cooldownUntil?: string }>;
   leaveQueue: () => Promise<{ ok: boolean; errorKey?: string }>;
   dismissMatch: (matchId: string) => Promise<{ ok: boolean; errorKey?: string }>;
   cancelSetup: (matchId: string) => Promise<{ ok: boolean; errorKey?: string }>;
@@ -28,6 +30,12 @@ type MatchQueueControlsProps = {
     voicePreference?: VoicePreference;
     partyCode?: string;
   }) => Promise<{ ok: boolean; errorKey?: string }>;
+  submitReview: (input: {
+    matchId: string;
+    positiveTags: string[];
+    negativeTags: string[];
+  }) => Promise<{ ok: boolean; errorKey?: string }>;
+  acceptPartnerNoVoice: (matchId: string) => Promise<{ ok: boolean; errorKey?: string }>;
 };
 
 function partnerLabel(partner: ActiveMatch["partner"]): string {
@@ -74,6 +82,22 @@ function dismissNoticeMessage(
   }
 }
 
+function voiceChoiceStyle(voice: VoicePreference | null): string {
+  if (voice === "valorant") return "border-[#0fbcbf]/50 bg-[#0fbcbf]/10 text-[#0fbcbf]";
+  if (voice === "discord") return "border-[#5865F2]/50 bg-[#5865F2]/10 text-[#c9d1ff]";
+  if (voice === "none") return "border-[#888]/50 bg-[#888]/10 text-[#aaa]";
+  return "border-[#333] bg-black/40 text-[#555]";
+}
+
+function voiceChoiceLabel(
+  voice: VoicePreference | null,
+  options: Record<"valorant" | "discord" | "none", string>,
+  waiting: string,
+): string {
+  if (!voice) return waiting;
+  return options[voice];
+}
+
 export default function MatchQueueControls({
   status,
   actionLoading,
@@ -83,6 +107,8 @@ export default function MatchQueueControls({
   cancelSetup,
   markSetupReady,
   updateConnection,
+  submitReview,
+  acceptPartnerNoVoice,
 }: MatchQueueControlsProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -94,6 +120,7 @@ export default function MatchQueueControls({
   const [partyCodeInput, setPartyCodeInput] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [showGuidelinesModal, setShowGuidelinesModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -111,6 +138,12 @@ export default function MatchQueueControls({
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (status.pendingReview) {
+      setShowReviewModal(true);
+    }
+  }, [status.pendingReview]);
 
   useEffect(() => {
     if (!window.location.search.includes("discord_linked=1")) {
@@ -202,12 +235,23 @@ export default function MatchQueueControls({
 
   async function proceedJoinQueue() {
     const result = await joinQueue();
+    setShowGuidelinesModal(false);
+
     if (!result.ok) {
       setIsError(true);
       const key = result.errorKey ?? "join_failed";
       setLastErrorKey(key);
-      const errors = t.matchQueue.errors as Record<string, string>;
-      setMessage(errors[key] ?? errors.join_failed);
+
+      if (key === "match_cooldown_active" && result.cooldownUntil) {
+        // 쿨다운 종료 시각을 로컬 시간으로 포맷해서 표시
+        const until = new Date(result.cooldownUntil).toLocaleTimeString();
+        const errors = t.matchQueue.errors as Record<string, string>;
+        const base = errors["match_cooldown_active"] ?? "큐 이용 제한 중입니다.";
+        setMessage(`${base} (${until}까지)`);
+      } else {
+        const errors = t.matchQueue.errors as Record<string, string>;
+        setMessage(errors[key] ?? errors.join_failed);
+      }
       return;
     }
 
@@ -366,6 +410,24 @@ export default function MatchQueueControls({
     setMessage(t.matchQueue.dismissed);
   }
 
+  async function handleAcceptPartnerNoVoice() {
+    if (!status.activeMatch) return;
+
+    setMessage(null);
+    setIsError(false);
+
+    const result = await acceptPartnerNoVoice(status.activeMatch.id);
+    if (!result.ok) {
+      setIsError(true);
+      const errors = t.matchQueue.errors as Record<string, string>;
+      setMessage(errors[result.errorKey ?? "accept_failed"] ?? errors.accept_failed);
+      return;
+    }
+
+    setIsError(false);
+    setMessage(t.matchQueue.acceptNoVoiceSuccess);
+  }
+
   async function handleCopy(value: string) {
     const ok = await copyText(value);
     setIsError(!ok);
@@ -378,7 +440,17 @@ export default function MatchQueueControls({
   const partnerChoseNoVoice = partnerVoice === "none" && myVoice !== null && myVoice !== "none";
   const iChoseNoVoice = myVoice === "none" && partnerVoice !== null && partnerVoice !== "none";
   const bothChoseNoVoice = myVoice === "none" && partnerVoice === "none";
-  const useValorantTools = myVoice === "valorant" || bothChoseNoVoice;
+  const myAcceptedPartnerNoVoice = activeMatch?.myAcceptedPartnerNoVoice ?? false;
+  const partnerAcceptedNoVoice = activeMatch?.partnerAcceptedNoVoice ?? false;
+  const partnerNoVoicePending = partnerChoseNoVoice && !myAcceptedPartnerNoVoice;
+  const useValorantTools =
+    myVoice === "valorant" ||
+    bothChoseNoVoice ||
+    (partnerChoseNoVoice && myAcceptedPartnerNoVoice);
+  const showSetupActions =
+    Boolean(myVoice) &&
+    (!partnerChoseNoVoice || myAcceptedPartnerNoVoice) &&
+    (!iChoseNoVoice || partnerAcceptedNoVoice);
   const useDiscordTools = myVoice === "discord";
   const partyInviteLink = activeMatch?.partyCode
     ? `valorant://party/invite/${activeMatch.partyCode}`
@@ -407,6 +479,26 @@ export default function MatchQueueControls({
         onClose={() => setShowGuidelinesModal(false)}
       />
 
+      <MatchReviewModal
+        open={showReviewModal}
+        pendingReview={status.pendingReview}
+        loading={actionLoading}
+        labels={{
+          title: t.matchReview.title,
+          subtitle: t.matchReview.subtitle,
+          positiveSection: t.matchReview.positiveSection,
+          negativeSection: t.matchReview.negativeSection,
+          submit: t.matchReview.submit,
+          submitting: t.matchReview.submitting,
+          skip: t.matchReview.skip,
+          tags: t.matchReview.tags,
+          errors: t.matchReview.errors,
+          submitted: t.matchReview.submitted,
+        }}
+        onSubmit={submitReview}
+        onClose={() => setShowReviewModal(false)}
+      />
+
       {activeMatch?.phase === "in_game" ? (
         <MatchInGamePanel
           activeMatch={activeMatch}
@@ -420,10 +512,18 @@ export default function MatchQueueControls({
             riotIdLabel: t.matchQueue.partnerRiotId,
             partyCodeLabel: t.matchQueue.partnerPartyCode,
             connected: t.matchQueue.playerConnected,
+            playerMe: t.matchQueue.playerMe,
+            playerPartner: t.matchQueue.playerPartner,
             waitingPartnerReady: t.matchQueue.waitingPartnerReadyComplete,
             endSession: t.matchQueue.endSession,
             ending: t.matchQueue.dismissing,
             voiceOptions: t.matchQueue.voiceOptions,
+            reputation: {
+              newUser: t.matchReview.newUser,
+              trustLabel: t.matchReview.trustLabel,
+              gradePrefix: t.matchReview.gradePrefix,
+              tags: t.matchReview.tags,
+            },
           }}
         />
       ) : activeMatch ? (
@@ -436,18 +536,56 @@ export default function MatchQueueControls({
             <p className="font-display text-2xl font-bold text-white">
               {partnerLabel(activeMatch.partner)}
             </p>
+            <ReputationBadge
+              reputation={activeMatch.partner.reputation}
+              labels={{
+                newUser: t.matchReview.newUser,
+                trustLabel: t.matchReview.trustLabel,
+                gradePrefix: t.matchReview.gradePrefix,
+                tags: t.matchReview.tags,
+              }}
+            />
             <p className="font-display text-[10px] tracking-widest text-[#888]">
               {t.matchQueue.connectionIntro}
             </p>
           </div>
 
-          <div className="border border-[#333] bg-black/40 px-4 py-3">
+          <div className="space-y-2">
             <p className="font-display text-[10px] tracking-widest text-[#555]">
-              {t.matchQueue.partnerVoiceStatus}
+              {t.matchQueue.voiceChoicesTitle}
             </p>
-            <p className="font-display text-sm font-bold text-white">
-              {partnerVoice ? t.matchQueue.voiceOptions[partnerVoice] : t.matchQueue.waiting}
-            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="border border-[#333] bg-black/40 px-4 py-3">
+                <p className="font-display text-[10px] tracking-widest text-[#555]">
+                  {t.matchQueue.myVoiceLabel}
+                </p>
+                <p className="mt-1 font-display text-xs tracking-widest text-[#888]">
+                  {activeMatch.me.riotId ?? activeMatch.me.displayName ?? t.matchQueue.you}
+                </p>
+                <p
+                  className={`mt-2 inline-block border px-2 py-1 font-display text-[10px] tracking-widest ${voiceChoiceStyle(myVoice)}`}
+                >
+                  {voiceChoiceLabel(myVoice, t.matchQueue.voiceOptions, t.matchQueue.waiting)}
+                </p>
+              </div>
+              <div className="border border-[#333] bg-black/40 px-4 py-3">
+                <p className="font-display text-[10px] tracking-widest text-[#555]">
+                  {t.matchQueue.partnerVoiceLabel}
+                </p>
+                <p className="mt-1 font-display text-xs tracking-widest text-white">
+                  {partnerLabel(activeMatch.partner)}
+                </p>
+                <p
+                  className={`mt-2 inline-block border px-2 py-1 font-display text-[10px] tracking-widest ${voiceChoiceStyle(partnerVoice)}`}
+                >
+                  {voiceChoiceLabel(
+                    partnerVoice,
+                    t.matchQueue.voiceOptions,
+                    t.matchQueue.waiting,
+                  )}
+                </p>
+              </div>
+            </div>
           </div>
 
           {showVoiceCountdown && voiceSecondsLeft !== null && (
@@ -495,21 +633,31 @@ export default function MatchQueueControls({
             </div>
           </div>
 
-          {partnerChoseNoVoice && (
+          {partnerNoVoicePending && (
             <div className="space-y-3 border border-[#ff4655]/40 bg-[#ff4655]/5 p-4">
               <p className="text-sm text-[#ff4655]">{t.matchQueue.partnerNoVoiceCancelPrompt}</p>
-              <button
-                type="button"
-                onClick={handleDismissMatch}
-                disabled={actionLoading}
-                className="btn-outline !py-3 disabled:opacity-50"
-              >
-                {actionLoading ? t.matchQueue.dismissing : t.matchQueue.dismiss}
-              </button>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => void handleAcceptPartnerNoVoice()}
+                  disabled={actionLoading}
+                  className="btn-accent !py-3 disabled:opacity-50"
+                >
+                  {actionLoading ? t.matchQueue.acceptingNoVoice : t.matchQueue.acceptNoVoice}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDismissMatch}
+                  disabled={actionLoading}
+                  className="btn-outline !py-3 disabled:opacity-50"
+                >
+                  {actionLoading ? t.matchQueue.dismissing : t.matchQueue.dismissNoVoiceMatch}
+                </button>
+              </div>
             </div>
           )}
 
-          {iChoseNoVoice && (
+          {iChoseNoVoice && !partnerAcceptedNoVoice && (
             <div className="flex items-center gap-3 border border-[#888]/40 bg-[#888]/5 px-4 py-3">
               <span className="online-dot" />
               <p className="font-display text-xs tracking-widest text-[#888]">
@@ -518,7 +666,7 @@ export default function MatchQueueControls({
             </div>
           )}
 
-          {useValorantTools && !partnerChoseNoVoice && (
+          {useValorantTools && !partnerNoVoicePending && (
             <div className="space-y-4 border border-[#222] bg-black/40 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -586,7 +734,7 @@ export default function MatchQueueControls({
             </div>
           )}
 
-          {useDiscordTools && !partnerChoseNoVoice && (
+          {useDiscordTools && !partnerNoVoicePending && (
             <div className="space-y-4 border border-[#5865F2]/40 bg-[#5865F2]/10 p-4">
               {!activeMatch.me.discordId ? (
                 <div className="space-y-3">
@@ -641,7 +789,7 @@ export default function MatchQueueControls({
             <p className="text-sm text-[#888]">{t.matchQueue.chooseVoiceHint}</p>
           )}
 
-          {myVoice && !partnerChoseNoVoice && (
+          {showSetupActions && (
             <div className="space-y-3 border border-[#333] bg-black/40 p-4">
               <p className="font-display text-[10px] tracking-widest text-[#555]">
                 {t.matchQueue.setupActionsIntro}

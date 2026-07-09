@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { fetchUserReputation, fetchUserReviewTagStats } from "@/lib/reputation/fetch";
 import { createClient } from "@/lib/supabase/server";
 import type { ValorantMatch } from "@/lib/supabase/valorant";
 import ProfileContent from "./ProfileContent";
@@ -14,7 +15,7 @@ export default async function ProfilePage() {
   }
 
   const profileSelect =
-    "id, email, display_name, riot_id, discord_username, discord_id, last_match_sync_at, created_at, updated_at";
+    "id, email, display_name, riot_id, discord_username, discord_id, last_match_sync_at, trust_score, review_count, created_at, updated_at";
 
   let { data: profile } = await supabase
     .from("profiles")
@@ -46,6 +47,11 @@ export default async function ProfilePage() {
     .order("played_at", { ascending: false })
     .limit(10);
 
+  const [reputation, tagStats] = await Promise.all([
+    fetchUserReputation(user.id),
+    fetchUserReviewTagStats(user.id),
+  ]);
+
   return (
     <ProfileContent
       profile={
@@ -57,11 +63,15 @@ export default async function ProfilePage() {
           discord_username: null,
           discord_id: null,
           last_match_sync_at: null,
+          trust_score: 70,
+          review_count: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }
       }
       initialMatches={(matches ?? []) as ValorantMatch[]}
+      reputation={reputation}
+      tagStats={tagStats}
     />
   );
 }

@@ -1,6 +1,8 @@
 "use client";
 
 import type { ActiveMatch } from "../hooks/useMatchQueue";
+import ReputationBadge from "./ReputationBadge";
+import type { UserReputation } from "@/lib/reputation/types";
 
 type MatchInGamePanelProps = {
   activeMatch: ActiveMatch;
@@ -14,10 +16,18 @@ type MatchInGamePanelProps = {
     riotIdLabel: string;
     partyCodeLabel: string;
     connected: string;
+    playerMe: string;
+    playerPartner: string;
     waitingPartnerReady: string;
     endSession: string;
     ending: string;
     voiceOptions: Record<"valorant" | "discord" | "none", string>;
+    reputation: {
+      newUser: string;
+      trustLabel: string;
+      gradePrefix: string;
+      tags: Record<string, string>;
+    };
   };
 };
 
@@ -36,12 +46,19 @@ export default function MatchInGamePanel({
   labels,
 }: MatchInGamePanelProps) {
   const players = [
-    { key: "me", label: labels.connected, player: activeMatch.me, voice: activeMatch.myVoicePreference },
+    {
+      key: "me",
+      roleLabel: labels.playerMe,
+      player: activeMatch.me,
+      voice: activeMatch.myVoicePreference,
+      reputation: null as UserReputation | null,
+    },
     {
       key: "partner",
-      label: labels.connected,
+      roleLabel: labels.playerPartner,
       player: activeMatch.partner,
       voice: activeMatch.partnerVoicePreference,
+      reputation: activeMatch.partner.reputation,
     },
   ] as const;
 
@@ -58,12 +75,12 @@ export default function MatchInGamePanel({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {players.map(({ key, player, voice }) => (
+        {players.map(({ key, roleLabel, player, voice, reputation }) => (
           <div key={key} className="space-y-3 border border-[#333] bg-black/50 p-4">
             <div className="flex items-center gap-2">
               <span className="online-dot shrink-0" />
               <p className="font-display text-[10px] tracking-widest text-[#0fbcbf]">
-                {labels.connected}
+                {roleLabel}
               </p>
             </div>
             <div>
@@ -71,12 +88,19 @@ export default function MatchInGamePanel({
                 {labels.riotIdLabel}
               </p>
               <p className="font-display text-sm font-bold text-white">{playerName(player)}</p>
+              {reputation ? (
+                <ReputationBadge
+                  reputation={reputation}
+                  labels={labels.reputation}
+                  compact
+                />
+              ) : null}
             </div>
             <div>
               <p className="font-display text-[10px] tracking-widest text-[#555]">
                 {labels.voiceLabel}
               </p>
-              <p className="font-display text-xs tracking-widest text-[#888]">
+              <p className="font-display text-xs font-bold tracking-widest text-white">
                 {voice ? labels.voiceOptions[voice] : "—"}
               </p>
             </div>

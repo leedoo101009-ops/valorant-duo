@@ -3,7 +3,8 @@ import {
   MATCH_RESPONSE_TIMEOUT_SECONDS,
   MATCH_SETUP_TIMEOUT_SECONDS,
 } from "@/lib/match/constants";
-import { fetchPartnerPublicProfile } from "@/lib/match/partner";
+import { fetchPartnerWithReputation, getPendingMatchReview } from "@/lib/match/review";
+import type { PendingMatchReview, UserReputation } from "@/lib/reputation/types";
 import {
   getDismissNoticeForUser,
   getMatchExpiresAt,
@@ -34,6 +35,8 @@ export type ActiveMatchResponse = {
   inGameAt: string | null;
   partyCode: string | null;
   partyCodeByMe: boolean;
+  myAcceptedPartnerNoVoice: boolean;
+  partnerAcceptedNoVoice: boolean;
   me: {
     displayName: string | null;
     riotId: string | null;
@@ -45,8 +48,11 @@ export type ActiveMatchResponse = {
     riotId: string | null;
     discordUsername: string | null;
     discordId: string | null;
+    reputation: UserReputation | null;
   };
 };
+
+export type PendingReviewResponse = PendingMatchReview;
 
 export type DismissNoticeResponse = {
   matchId: string;
@@ -60,7 +66,7 @@ async function getActiveMatchForUser(
   const { data: match } = await supabase
     .from("duo_matches")
     .select(
-      "id, user_a_id, user_b_id, status, created_at, match_phase, setup_started_at, user_a_setup_ready, user_b_setup_ready, in_game_at, user_a_voice_preference, user_b_voice_preference, party_code, party_code_by",
+      "id, user_a_id, user_b_id, status, created_at, match_phase, setup_started_at, user_a_setup_ready, user_b_setup_ready, in_game_at, user_a_voice_preference, user_b_voice_preference, user_a_accepted_no_voice, user_b_accepted_no_voice, party_code, party_code_by",
     )
     .in("status", ["active", "in_game"])
     .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
@@ -72,14 +78,14 @@ async function getActiveMatchForUser(
 
   const partnerId = match.user_a_id === userId ? match.user_b_id : match.user_a_id;
   const isUserA = match.user_a_id === userId;
-  const partner = await fetchPartnerPublicProfile(partnerId);
+  const partnerProfile = await fetchPartnerWithReputation(partnerId);
   const { data: me } = await supabase
     .from("profiles")
     .select("display_name, riot_id, discord_username, discord_id")
     .eq("id", userId)
     .maybeSingle();
 
-  if (!partner) {
+  if (!partnerProfile) {
     return null;
   }
 
@@ -119,6 +125,12 @@ async function getActiveMatchForUser(
     inGameAt: match.in_game_at,
     partyCode: match.party_code,
     partyCodeByMe: match.party_code_by === userId,
+    myAcceptedPartnerNoVoice: isUserA
+      ? Boolean(match.user_a_accepted_no_voice)
+      : Boolean(match.user_b_accepted_no_voice),
+    partnerAcceptedNoVoice: isUserA
+      ? Boolean(match.user_b_accepted_no_voice)
+      : Boolean(match.user_a_accepted_no_voice),
     me: {
       displayName: me?.display_name ?? null,
       riotId: me?.riot_id ?? null,
@@ -126,10 +138,11 @@ async function getActiveMatchForUser(
       discordId: me?.discord_id ?? null,
     },
     partner: {
-      displayName: partner.displayName,
-      riotId: partner.riotId,
-      discordUsername: sharePartnerDiscord ? partner.discordUsername : null,
-      discordId: sharePartnerDiscord ? partner.discordId : null,
+      displayName: partnerProfile.displayName,
+      riotId: partnerProfile.riotId,
+      discordUsername: sharePartnerDiscord ? partnerProfile.discordUsername : null,
+      discordId: sharePartnerDiscord ? partnerProfile.discordId : null,
+      reputation: partnerProfile.reputation,
     },
   };
 }
@@ -206,15 +219,29 @@ export async function GET(request: Request) {
       joinedAt: null,
       activeMatch: null,
       dismissNotice: null,
+      pendingReview: null,
     });
   }
 
   if (hasAdminClient()) {
-    await runMatchExpireJobsIfDue();
+    try {
+      await runMatchExpireJobsIfDue();
+    } catch {
+      // expire RPC 실패해도 status 조회는 계속
+    }
   }
 
   const activeMatch = await getActiveMatchForUser(supabase, user.id);
   const dismissNotice = activeMatch ? null : await getRecentDismissNotice(supabase, user.id);
+
+  let pendingReview: PendingMatchReview | null = null;
+  if (!activeMatch) {
+    try {
+      pendingReview = await getPendingMatchReview(user.id);
+    } catch {
+      pendingReview = null;
+    }
+  }
 
   if (activeMatch) {
     return Response.json({
@@ -224,6 +251,7 @@ export async function GET(request: Request) {
       joinedAt: null,
       activeMatch,
       dismissNotice: null,
+      pendingReview: null,
     });
   }
 
@@ -240,5 +268,6 @@ export async function GET(request: Request) {
     joinedAt: entry?.joined_at ?? null,
     activeMatch: null,
     dismissNotice,
+    pendingReview,
   });
 }
