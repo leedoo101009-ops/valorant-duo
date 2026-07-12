@@ -1,5 +1,7 @@
 // 클라이언트(프로필 페이지)에 노출되는 프로필 타입
 // riot_puuid는 서버 전용 — 브라우저로 보내지 않습니다.
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export type Profile = {
   id: string;
   email: string | null;
@@ -22,8 +24,9 @@ export const emptyProfileConnections = {
 } as const;
 
 // 로그인한 유저의 profiles 행이 없으면 만들어 줍니다.
+// 이메일 가입 / Google OAuth 모두에서 사용합니다.
 export async function ensureProfile(
-  supabase: ReturnType<typeof import("@/lib/supabase/client").createClient>,
+  supabase: SupabaseClient,
   user: { id: string; email?: string | null },
 ) {
   const { data: existing } = await supabase

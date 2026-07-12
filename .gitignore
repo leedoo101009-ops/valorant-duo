@@ -41,5 +41,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
-.env*
+# 로컬 디버그 스크립트 (service_role 키 사용 — 저장소에 올리지 않음)
+/scripts/debug-*.mjs

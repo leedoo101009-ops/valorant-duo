@@ -176,19 +176,107 @@ function ProfileContentInner({
       body: JSON.stringify({ riotId: riotIdInput }),
     });
 
-    const data = (await response.json()) as { ok?: boolean; message?: string; riot_id?: string };
+    const data = (await response.json()) as {
+      ok?: boolean;
+      errorKey?: string;
+      message?: string;
+      riot_id?: string;
+    };
 
     if (!response.ok || !data.ok) {
       setIsError(true);
-      setMessage(data.message ?? "Failed to link Riot account");
+      const errors = t.profile.riotErrors as Record<string, string>;
+      const key = data.errorKey ?? "server_error";
+      setMessage(errors[key] ?? errors.server_error);
       setLinkingRiot(false);
       return;
     }
 
-    setProfile((prev) => ({ ...prev, riot_id: data.riot_id ?? prev.riot_id }));
+    // setState는 비동기라 바로 아래 runMatchSync에서 profile.riot_id가 아직 예전 값일 수 있음
+    const linkedRiotId = data.riot_id ?? profile.riot_id;
+    setProfile((prev) => ({ ...prev, riot_id: linkedRiotId }));
     setRiotIdInput("");
-    setMessage(t.profile.linkRiotSuccess);
     setLinkingRiot(false);
+    setMessage(t.profile.syncAfterLink);
+    setIsError(false);
+    await runMatchSync(false, linkedRiotId);
+    router.refresh();
+  }
+
+  async function runMatchSync(
+    showLoading = true,
+    riotIdOverride?: string | null,
+  ): Promise<boolean> {
+    const hasRiot = Boolean(riotIdOverride ?? profile.riot_id);
+    if (!hasRiot) {
+      setIsError(true);
+      setMessage(t.profile.syncNeedRiot);
+      return false;
+    }
+
+    if (showLoading) {
+      setSyncingMatches(true);
+    }
+    setIsError(false);
+
+    const response = await fetch("/api/valorant/sync", { method: "POST" });
+    const data = (await response.json()) as {
+      ok?: boolean;
+      errorKey?: string;
+      warningKey?: string;
+      retryAfterSec?: number;
+      inserted?: number;
+      fetched?: number;
+      total?: number;
+      matches?: ValorantMatch[];
+      lastMatchSyncAt?: string;
+    };
+
+    if (!response.ok || !data.ok) {
+      setIsError(true);
+      const errors = t.profile.matchErrors as Record<string, string>;
+      const key = data.errorKey ?? "server_error";
+      let message = errors[key] ?? errors.server_error;
+      if ((key === "sync_cooldown" || key === "rate_limit") && data.retryAfterSec) {
+        message = `${message} (${data.retryAfterSec}s)`;
+      }
+      setMessage(message);
+      if (showLoading) {
+        setSyncingMatches(false);
+      }
+      return false;
+    }
+
+    if (Array.isArray(data.matches)) {
+      setMatches(data.matches);
+    }
+
+    if (data.lastMatchSyncAt) {
+      setProfile((prev) => ({ ...prev, last_match_sync_at: data.lastMatchSyncAt ?? null }));
+    }
+
+    if ((data.total ?? 0) === 0) {
+      setMessage(t.profile.syncEmpty);
+    } else {
+      const count = data.fetched ?? data.total ?? 0;
+      const base = t.profile.syncSuccessCount.replace("{count}", String(count));
+      // 일부만 가져온 경우(한도)에도 성공으로 보여 주되 안내를 붙입니다.
+      if (data.warningKey === "rate_limit") {
+        setMessage(`${base} ${t.profile.matchErrors.rate_limit}`);
+      } else {
+        setMessage(base);
+      }
+    }
+
+    if (showLoading) {
+      setSyncingMatches(false);
+    }
+    return true;
+  }
+
+  async function handleSyncMatches() {
+    setMessage(null);
+    await runMatchSync(true);
     router.refresh();
   }
 
@@ -241,46 +329,6 @@ function ProfileContentInner({
     setProfile((prev) => ({ ...prev, discord_username: null, discord_id: null }));
     setMessage(t.profile.unlinkDiscordSuccess);
     setUnlinkingDiscord(false);
-    router.refresh();
-  }
-
-  async function handleSyncMatches() {
-    if (!profile.riot_id) {
-      setIsError(true);
-      setMessage(t.profile.syncNeedRiot);
-      return;
-    }
-
-    setSyncingMatches(true);
-    setMessage(null);
-    setIsError(false);
-
-    const response = await fetch("/api/valorant/sync", { method: "POST" });
-    const data = (await response.json()) as {
-      ok?: boolean;
-      message?: string;
-      errorKey?: string;
-      inserted?: number;
-      fetched?: number;
-      total?: number;
-    };
-
-    if (!response.ok || !data.ok) {
-      setIsError(true);
-      const errors = t.profile.matchErrors as Record<string, string>;
-      const key = data.errorKey ?? data.message;
-      setMessage((key && errors[key]) || data.message || "Failed to sync matches");
-      setSyncingMatches(false);
-      return;
-    }
-
-    if (data.total === 0) {
-      setMessage(t.profile.syncEmpty);
-    } else {
-      setMessage(t.profile.syncSuccess);
-    }
-
-    setSyncingMatches(false);
     router.refresh();
   }
 

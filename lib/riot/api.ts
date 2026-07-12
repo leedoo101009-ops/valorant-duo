@@ -32,7 +32,8 @@ export async function fetchRiotAccountByRiotId(
   const region = process.env.RIOT_API_REGION ?? "asia";
 
   if (!apiKey) {
-    return { account: null, error: "RIOT_API_KEY not configured", status: 503 };
+    // 키 이름/설정 상태를 클라이언트까지 흘리지 않도록 일반 에러만 반환
+    return { account: null, error: "Riot API unavailable", status: 503 };
   }
 
   const url = `https://${region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`;
