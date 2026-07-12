@@ -124,6 +124,7 @@ const JOIN_TIMEOUT_MS = 15_000;
 
       const data = (await response.json()) as {
         ok?: boolean;
+        matched?: boolean;
         errorKey?: string;
         cooldownUntil?: string;
         queueCount?: number;
@@ -137,12 +138,16 @@ const JOIN_TIMEOUT_MS = 15_000;
         };
       }
 
-      // refresh 전에 즉시 큐 상태 반영 — status poll 실패해도 UI가 멈추지 않음
-      setStatus((prev) => ({
-        ...prev,
-        inQueue: true,
-        queueCount: data.queueCount ?? prev.queueCount,
-      }));
+      // 즉시 매칭된 경우 inQueue=true로 두면 안 됩니다 (매치 화면으로 가야 함).
+      // refresh()가 activeMatch를 감지해 매칭 화면으로 전환합니다.
+      if (!data.matched) {
+        // refresh 전에 즉시 큐 상태 반영 — status poll 실패해도 UI가 멈추지 않음
+        setStatus((prev) => ({
+          ...prev,
+          inQueue: true,
+          queueCount: data.queueCount ?? prev.queueCount,
+        }));
+      }
 
       void refresh();
       return { ok: true };

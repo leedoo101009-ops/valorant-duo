@@ -7,6 +7,7 @@ export type Profile = {
   email: string | null;
   display_name: string | null;
   riot_id: string | null;
+  valorant_shard?: string | null;
   discord_username: string | null;
   discord_id: string | null;
   last_match_sync_at?: string | null;

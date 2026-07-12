@@ -7,6 +7,7 @@ import {
   parseRiotId,
 } from "@/lib/riot/api";
 import { mapRiotHttpError } from "@/lib/riot/errors";
+import { fetchValorantActiveShard } from "@/lib/riot/valorant";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
 const RATE_LIMIT = 5;
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
   }
 
   const riotId = formatRiotId(account);
+  const { shard } = await fetchValorantActiveShard(account.puuid);
 
   const admin = createAdminClient();
   const { error } = await admin.rpc("link_riot_account", {
@@ -92,5 +94,10 @@ export async function POST(request: Request) {
     return Response.json({ ok: false, errorKey: "server_error" }, { status: 500 });
   }
 
-  return Response.json({ ok: true, riot_id: riotId });
+  if (shard) {
+    // active-shard는 같은 서버 유저끼리만 매칭하기 위한 값입니다.
+    await admin.from("profiles").update({ valorant_shard: shard }).eq("id", user.id);
+  }
+
+  return Response.json({ ok: true, riot_id: riotId, valorant_shard: shard });
 }

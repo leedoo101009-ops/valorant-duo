@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useEffect, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useLanguage } from "../context/LanguageContext";
 import { createClient } from "@/lib/supabase/client";
@@ -38,21 +38,17 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialMode = searchParams.get("mode") === "signup" ? "signup" : "login";
+  const hasAuthError = searchParams.get("error") === "auth";
 
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [isError, setIsError] = useState(false);
-
-  useEffect(() => {
-    if (searchParams.get("error") === "auth") {
-      setIsError(true);
-      setMessage(t.auth.oauthFailed);
-    }
-  }, [searchParams, t.auth.oauthFailed]);
+  const [message, setMessage] = useState<string | null>(
+    hasAuthError ? t.auth.oauthFailed : null,
+  );
+  const [isError, setIsError] = useState(hasAuthError);
 
   async function handleGoogleLogin() {
     setOauthLoading(true);

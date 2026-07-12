@@ -40,6 +40,18 @@ async function touchLastMatchSyncAt(
   return now;
 }
 
+async function saveValorantShard(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  shard: string | null | undefined,
+) {
+  if (!shard) {
+    return;
+  }
+
+  await admin.from("profiles").update({ valorant_shard: shard }).eq("id", userId);
+}
+
 async function resolveRiotPuuid(
   admin: ReturnType<typeof createAdminClient>,
   userId: string,
@@ -255,6 +267,7 @@ export async function POST(request: Request) {
     const savedMatches = await fetchSavedMatches(admin, user.id);
 
     if (errorKey === "rate_limit") {
+      await saveValorantShard(admin, user.id, shard);
       return Response.json({
         ok: true,
         partial: true,
@@ -270,6 +283,7 @@ export async function POST(request: Request) {
       });
     }
 
+    await saveValorantShard(admin, user.id, shard);
     return Response.json({
       ok: true,
       inserted,
@@ -295,6 +309,7 @@ export async function POST(request: Request) {
   }
 
   const lastMatchSyncAt = await touchLastMatchSyncAt(admin, user.id);
+  await saveValorantShard(admin, user.id, shard);
 
   return Response.json({
     ok: true,

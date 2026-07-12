@@ -1,3 +1,4 @@
+import "server-only";
 import { createClient } from "@supabase/supabase-js";
 
 // service_role 전용 — API Route에서만 사용. 브라우저에 절대 노출하지 마세요.

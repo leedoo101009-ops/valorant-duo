@@ -436,6 +436,9 @@ export const translations = {
       errors: {
         login_required: "Please log in first.",
         riot_required: "Link your Riot account in profile before matching.",
+        riot_already_linked: "This Riot account is already linked to another user.",
+        valorant_shard_required:
+          "Could not confirm your Valorant server. Re-link your Riot account or fetch match history once.",
         offline_required: "You must be online on this page to join the queue. Stay on the site and try again.",
         profile_not_found: "Profile not found. Please log in again.",
         join_failed: "Could not join the queue. Please try again.",
@@ -925,6 +928,9 @@ export const translations = {
       errors: {
         login_required: "먼저 로그인해 주세요.",
         riot_required: "매칭 전에 프로필에서 라이엇 계정을 연동해 주세요.",
+        riot_already_linked: "이 라이엇 계정은 이미 다른 유저에 연동돼 있어요.",
+        valorant_shard_required:
+          "발로란트 서버를 확인하지 못했어요. 라이엇 계정을 다시 연동하거나 전적을 한 번 불러와 주세요.",
         offline_required: "큐 등록은 이 페이지에 접속 중일 때만 가능해요. 페이지를 유지한 채 다시 시도해 주세요.",
         profile_not_found: "프로필을 찾을 수 없어요. 다시 로그인해 주세요.",
         join_failed: "큐 등록에 실패했어요. 다시 시도해 주세요.",

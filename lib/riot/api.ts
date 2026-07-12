@@ -1,3 +1,5 @@
+import "server-only";
+
 // Riot ID 파싱: "PlayerName#KR1" → { gameName, tagLine }
 export function parseRiotId(input: string) {
   const trimmed = input.trim();

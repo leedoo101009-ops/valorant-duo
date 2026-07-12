@@ -11,9 +11,10 @@ import {
   getSecondsUntilExpiry,
   type DismissNoticeReason,
 } from "@/lib/match/timeout";
-import { hasAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient, hasAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/security/rateLimit";
+import { attemptSmartMatch } from "@/lib/matching/runMatch";
 
 const RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
@@ -228,6 +229,23 @@ export async function GET(request: Request) {
       await runMatchExpireJobsIfDue();
     } catch {
       // expire RPC 실패해도 status 조회는 계속
+    }
+
+    // 큐에 실제로 들어와 있는 유저만 재평가합니다.
+    // (매 폴링마다 모든 접속자에게 후보 조회를 돌리면 DB 낭비 — 큐 엔트리 있을 때만)
+    // 대기 시간이 길어지면 findBestMatch의 시간 완화가 동작해 하드 조건만으로도 매칭됩니다.
+    try {
+      const { data: queueEntry } = await supabase
+        .from("match_queue_entries")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (queueEntry) {
+        await attemptSmartMatch(createAdminClient(), user.id);
+      }
+    } catch {
+      // 매칭 실패는 무시 — status 응답에는 영향 없음
     }
   }
 

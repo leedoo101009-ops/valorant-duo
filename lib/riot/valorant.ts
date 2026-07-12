@@ -1,3 +1,5 @@
+import "server-only";
+
 import { getAgentName, parseMapName } from "@/lib/riot/agents";
 import { mapRiotHttpError, type RiotApiErrorKey } from "@/lib/riot/errors";
 

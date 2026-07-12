@@ -1,4 +1,5 @@
-// POST /api/match/queue/join — 기존 경로 호환 (STEP 6 핸들러 재사용)
+// POST /api/matching/queue — STEP 6 매칭 큐 API
+// 큐 입장 → findBestMatch 궁합 매칭 → 결과 반환
 
 import { handleQueuePost } from "@/lib/matching/handleQueuePost";
 
