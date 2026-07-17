@@ -8,6 +8,8 @@ import {
 } from "@/lib/riot/api";
 import { mapRiotHttpError } from "@/lib/riot/errors";
 import { fetchValorantActiveShard } from "@/lib/riot/valorant";
+import { syncProfileTier } from "@/lib/riot/syncTier";
+import { setValorantShard } from "@/lib/supabase/profileServerWrites";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
 const RATE_LIMIT = 5;
@@ -96,8 +98,20 @@ export async function POST(request: Request) {
 
   if (shard) {
     // active-shard는 같은 서버 유저끼리만 매칭하기 위한 값입니다.
-    await admin.from("profiles").update({ valorant_shard: shard }).eq("id", user.id);
+    await setValorantShard(admin, user.id, shard);
+    await syncProfileTier(admin, user.id, account.puuid, shard, { force: true });
   }
 
-  return Response.json({ ok: true, riot_id: riotId, valorant_shard: shard });
+  const { data: tierProfile } = await admin
+    .from("profiles")
+    .select("tier")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  return Response.json({
+    ok: true,
+    riot_id: riotId,
+    valorant_shard: shard,
+    tier: tierProfile?.tier ?? null,
+  });
 }

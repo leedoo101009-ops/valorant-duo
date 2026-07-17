@@ -22,6 +22,8 @@ import {
 } from "@/lib/analysis/scheduler";
 import { attemptSmartMatch } from "@/lib/matching/runMatch";
 import { fetchPartnerWithReputation } from "@/lib/match/review";
+import { syncProfileTier } from "@/lib/riot/syncTier";
+import { setValorantShard } from "@/lib/supabase/profileServerWrites";
 
 const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60_000;
@@ -142,16 +144,34 @@ async function ensureValorantShard(
     return { ok: false, errorKey: errorKey ?? "valorant_shard_required" };
   }
 
-  const { error: updateError } = await admin
-    .from("profiles")
-    .update({ valorant_shard: shard })
-    .eq("id", userId);
-
-  if (updateError) {
+  const saved = await setValorantShard(admin, userId, shard);
+  if (!saved.ok) {
     return { ok: false, errorKey: "server_error" };
   }
 
   return { ok: true };
+}
+
+async function ensureProfileTier(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<void> {
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("riot_puuid, valorant_shard, tier")
+    .eq("id", userId)
+    .maybeSingle();
+
+  const puuid = profile?.riot_puuid as string | null | undefined;
+  const shard = profile?.valorant_shard as string | null | undefined;
+
+  if (!puuid || !shard) {
+    return;
+  }
+
+  await syncProfileTier(admin, userId, puuid, shard, {
+    force: profile?.tier == null,
+  });
 }
 
 // 매칭 성공 시 상대 프로필 + AI 태그(공개 뷰) 조회
@@ -164,7 +184,9 @@ async function buildPartnerMatchPayload(
     fetchPartnerWithReputation(partnerId),
     admin
       .from("profiles_match_public")
-      .select("playstyle_tags, aggression_score, role_preference, synergy_notes")
+      .select(
+        "playstyle_tags, aggression_score, role_preference, trend_summary, situational_notes, anomaly_notes, synergy_notes",
+      )
       .eq("id", partnerId)
       .maybeSingle(),
   ]);
@@ -184,6 +206,9 @@ async function buildPartnerMatchPayload(
           tags: playstyle.data.playstyle_tags ?? [],
           aggressionScore: playstyle.data.aggression_score,
           rolePreference: playstyle.data.role_preference,
+          trendSummary: playstyle.data.trend_summary,
+          situationalNotes: playstyle.data.situational_notes,
+          anomalyNotes: playstyle.data.anomaly_notes,
           synergyNotes: playstyle.data.synergy_notes,
         }
       : null,
@@ -269,6 +294,12 @@ export async function handleQueuePost(request: Request): Promise<Response> {
       },
       { status: shard.errorKey === "rate_limit" ? 429 : 400 },
     );
+  }
+
+  try {
+    await ensureProfileTier(admin, user.id);
+  } catch {
+    // 티어 동기화 실패해도 큐 입장은 허용 (언랭 유저 등)
   }
 
   const { error: joinError } = await admin.rpc("join_match_queue", {

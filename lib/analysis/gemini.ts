@@ -1,5 +1,9 @@
 import "server-only";
 
+// ⚠️ 롤백 보관용 — 현재 free 플랜은 ruleBasedAnalyzer를 사용합니다.
+// executePlanAnalysis.ts 에서 Gemini 호출은 주석 처리됨.
+// GEMINI_API_KEY / 이 파일은 삭제하지 마세요 (필요 시 주석 해제하여 복구).
+//
 // 무료 플랜 유저용 플레이스타일 분석 — Google Gemini 2.5 Flash (무료 티어)
 //
 // 왜 서버 전용인가?

@@ -11,6 +11,11 @@ import {
   getSyncCooldownRemaining,
   SYNC_COOLDOWN_MS,
 } from "@/lib/riot/valorant";
+import { syncProfileTier } from "@/lib/riot/syncTier";
+import {
+  setValorantShard,
+  touchLastMatchSyncAt as touchLastMatchSyncRpc,
+} from "@/lib/supabase/profileServerWrites";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 
 const RATE_LIMIT = 5;
@@ -30,14 +35,13 @@ async function fetchSavedMatches(admin: ReturnType<typeof createAdminClient>, us
   return data ?? [];
 }
 
-async function touchLastMatchSyncAt(
+async function recordMatchSyncAttempt(
   admin: ReturnType<typeof createAdminClient>,
   userId: string,
 ): Promise<string> {
-  // 실패해도 쿨다운을 걸어 Riot 쿼터 남용을 막습니다.
-  const now = new Date().toISOString();
-  await admin.from("profiles").update({ last_match_sync_at: now }).eq("id", userId);
-  return now;
+  // 실패해도 쿨다운을 걸어 Riot 쿼터 남용을 막습니다 (025 RPC).
+  const result = await touchLastMatchSyncRpc(admin, userId);
+  return result.syncedAt ?? new Date().toISOString();
 }
 
 async function saveValorantShard(
@@ -46,10 +50,25 @@ async function saveValorantShard(
   shard: string | null | undefined,
 ) {
   if (!shard) {
-    return;
+    return null;
   }
 
-  await admin.from("profiles").update({ valorant_shard: shard }).eq("id", userId);
+  await setValorantShard(admin, userId, shard);
+  return shard;
+}
+
+async function refreshProfileTier(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  puuid: string,
+  shard: string | null | undefined,
+) {
+  if (!shard) {
+    return null;
+  }
+
+  const { tier } = await syncProfileTier(admin, userId, puuid, shard);
+  return tier;
 }
 
 async function resolveRiotPuuid(
@@ -263,11 +282,14 @@ export async function POST(request: Request) {
         ? Number((syncResult as { inserted: number }).inserted)
         : 0;
 
-    const lastMatchSyncAt = await touchLastMatchSyncAt(admin, user.id);
+    const lastMatchSyncAt = await recordMatchSyncAttempt(admin, user.id);
     const savedMatches = await fetchSavedMatches(admin, user.id);
+    const savedShard = await saveValorantShard(admin, user.id, shard);
+    const tier = savedShard
+      ? await refreshProfileTier(admin, user.id, riotPuuid, savedShard)
+      : null;
 
     if (errorKey === "rate_limit") {
-      await saveValorantShard(admin, user.id, shard);
       return Response.json({
         ok: true,
         partial: true,
@@ -277,13 +299,13 @@ export async function POST(request: Request) {
         total: matches.length,
         matches: savedMatches,
         lastMatchSyncAt,
-        shard,
+        shard: savedShard,
+        tier,
         warningKey: "rate_limit",
         cooldownSec: Math.ceil(SYNC_COOLDOWN_MS / 1000),
       });
     }
 
-    await saveValorantShard(admin, user.id, shard);
     return Response.json({
       ok: true,
       inserted,
@@ -292,7 +314,8 @@ export async function POST(request: Request) {
       total: matches.length,
       matches: savedMatches,
       lastMatchSyncAt,
-      shard,
+      shard: savedShard,
+      tier,
       cooldownSec: Math.ceil(SYNC_COOLDOWN_MS / 1000),
     });
   }
@@ -300,7 +323,7 @@ export async function POST(request: Request) {
   if (errorKey) {
     // 실패해도 항상 타임스탬프를 남깁니다.
     // (전적 없는 유저는 60초 뒤 재시도 가능 — 무한 재시도로 쿼터 태우는 것 방지)
-    const lastMatchSyncAt = await touchLastMatchSyncAt(admin, user.id);
+    const lastMatchSyncAt = await recordMatchSyncAttempt(admin, user.id);
 
     return Response.json(
       { ok: false, errorKey, lastMatchSyncAt, shard },
@@ -308,8 +331,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const lastMatchSyncAt = await touchLastMatchSyncAt(admin, user.id);
-  await saveValorantShard(admin, user.id, shard);
+  const lastMatchSyncAt = await recordMatchSyncAttempt(admin, user.id);
+  const savedShard = await saveValorantShard(admin, user.id, shard);
+  const tier = savedShard
+    ? await refreshProfileTier(admin, user.id, riotPuuid, savedShard)
+    : null;
 
   return Response.json({
     ok: true,
@@ -319,6 +345,7 @@ export async function POST(request: Request) {
     total: 0,
     matches: await fetchSavedMatches(admin, user.id),
     lastMatchSyncAt,
-    shard,
+    shard: savedShard,
+    tier,
   });
 }

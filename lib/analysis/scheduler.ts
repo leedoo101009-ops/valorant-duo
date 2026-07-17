@@ -5,24 +5,16 @@
 //   - 또는 크론잡에서 온라인 유저를 돌면서 호출
 //
 // 규칙:
-//   - free    : 7일(주 1회) 지났으면 Gemini로 재분석
-//   - premium : 3일 지났으면 Claude로 재분석
+//   - free    : 7일(주 1회) 지났으면 규칙기반 재분석 (LLM 없음)
+//   - premium : 3일 지났으면 규칙기반 + Claude 정성 재분석
 //   - last_analyzed_at이 null(최초 가입)이면 즉시 1회 분석
 //
 // 설계:
 //   shouldReanalyze — 순수 함수. DB/네트워크 없이 입력만으로 판단 → 테스트 쉬움
-//   runAnalysis     — 실제 실행 (전적 조회 → AI 호출 → RPC 저장)
+//   runAnalysis     — 실제 실행 (전적 조회 → executePlanAnalysis → RPC 저장)
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { analyzePlaystyleWithGemini } from "@/lib/analysis/gemini";
-import { analyzePlaystyleWithClaude } from "@/lib/analysis/claude";
-import {
-  aggregatePlaystyleInput,
-  aggregateDeepPlaystyleInput,
-  ANALYSIS_MATCH_SELECT,
-  MIN_MATCHES_FOR_ANALYSIS,
-  type StoredMatchRow,
-} from "@/lib/analysis/aggregate";
+import { executePlanAnalysis } from "@/lib/analysis/executePlanAnalysis";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -43,7 +35,7 @@ export type SchedulerUser = {
 
 export type RunAnalysisResult = {
   analyzed: boolean;
-  source?: "gemini" | "claude";
+  source?: "rule_based" | "claude";
   // analyzed=false일 때 이유 (로그/디버깅용)
   reason?: "not_due" | "not_enough_matches" | "analysis_unavailable" | "save_failed";
 };
@@ -88,61 +80,11 @@ export async function runAnalysis(
     return { analyzed: false, reason: "not_due" };
   }
 
-  const { data: matches, error: matchesError } = await admin
-    .from("valorant_matches")
-    .select(ANALYSIS_MATCH_SELECT)
-    .eq("user_id", user.id)
-    .order("played_at", { ascending: false })
-    .limit(10);
+  const result = await executePlanAnalysis(user.id, user.plan, admin);
 
-  if (matchesError || !matches || matches.length < MIN_MATCHES_FOR_ANALYSIS) {
-    return { analyzed: false, reason: "not_enough_matches" };
+  if (!result.ok) {
+    return { analyzed: false, reason: result.reason };
   }
 
-  const rows = matches as StoredMatchRow[];
-
-  // 플랜 분기: free → Gemini(간단), premium → Claude(심층)
-  const source: "gemini" | "claude" = user.plan === "premium" ? "claude" : "gemini";
-
-  const claudeResult =
-    source === "claude"
-      ? await analyzePlaystyleWithClaude(aggregateDeepPlaystyleInput(rows))
-      : null;
-
-  const geminiResult =
-    source === "gemini"
-      ? await analyzePlaystyleWithGemini(aggregatePlaystyleInput(rows))
-      : null;
-
-  const analysis = claudeResult ?? geminiResult!;
-
-  // Gemini 실패는 빈 태그로 돌아옴 — 저장하면 기존 분석을 지워버리므로 건너뜀.
-  // Claude는 실패해도 더미(["분석 대기중"])가 오므로 저장됨 — 크레딧 없이도
-  // 전체 플로우(호출 → 저장 → 매칭) 테스트가 가능해야 하기 때문 (의도된 차이).
-  if (analysis.playstyle_tags.length === 0) {
-    return { analyzed: false, reason: "analysis_unavailable" };
-  }
-
-  // synergy_notes는 Claude 전용 — Gemini 결과에는 없으므로 undefined 그대로 전달하면
-  // RPC의 default null이 동작합니다 (021 migration 이후).
-  const synergyNotes =
-    claudeResult && "synergy_notes" in claudeResult
-      ? (claudeResult.synergy_notes as string)
-      : undefined;
-
-  const { error: saveError } = await admin.rpc("save_playstyle_analysis", {
-    p_user_id: user.id,
-    p_playstyle_tags: analysis.playstyle_tags,
-    p_aggression_score: analysis.aggression_score,
-    p_role_preference: analysis.role_preference,
-    p_analysis_source: source,
-    ...(synergyNotes !== undefined && { p_synergy_notes: synergyNotes }),
-  });
-
-  if (saveError) {
-    console.warn("[scheduler] analysis save failed:", saveError.message);
-    return { analyzed: false, reason: "save_failed" };
-  }
-
-  return { analyzed: true, source };
+  return { analyzed: true, source: result.source };
 }

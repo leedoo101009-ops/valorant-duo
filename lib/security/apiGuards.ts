@@ -13,7 +13,17 @@ export function parseUuid(value: unknown): string | null {
 // cross-site POST(CSRF) 완화 — 브라우저 fetch/beacon은 Sec-Fetch-Site / Origin 으로 판별
 export function isTrustedSiteRequest(request: Request): boolean {
   const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite === "same-origin" || fetchSite === "same-site") {
+  const fetchMode = request.headers.get("sec-fetch-mode");
+
+  // sendBeacon(탭 닫기 등)은 Origin/Referer 없이 no-cors + same-origin 으로 오는 경우가 많음
+  if (
+    fetchSite === "same-origin" &&
+    (fetchMode === "no-cors" || fetchMode === "cors" || fetchMode === "same-origin")
+  ) {
+    return true;
+  }
+
+  if (fetchSite === "same-site") {
     return true;
   }
 

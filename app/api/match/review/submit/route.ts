@@ -11,6 +11,7 @@ import { checkRateLimit } from "@/lib/security/rateLimit";
 
 const RATE_LIMIT = 10;
 const RATE_WINDOW_MS = 60_000;
+const MAX_TAGS_PER_LIST = 5;
 
 function sanitizeTags(value: unknown, allowed: readonly string[]): string[] | null {
   if (!Array.isArray(value)) {
@@ -18,7 +19,10 @@ function sanitizeTags(value: unknown, allowed: readonly string[]): string[] | nu
   }
 
   const tags = [...new Set(value.filter((tag): tag is string => typeof tag === "string"))];
-  if (tags.some((tag) => !allowed.includes(tag))) {
+  if (tags.length > MAX_TAGS_PER_LIST) {
+    return null;
+  }
+  if (tags.some((tag) => !allowed.includes(tag) || tag.length > 32)) {
     return null;
   }
 
