@@ -4,7 +4,8 @@ import { checkRateLimit } from "@/lib/security/rateLimit";
 import { safeRedirectPath } from "@/lib/security/safeRedirect";
 
 // GET /api/discord/authorize
-// 로그인한 유저를 Discord OAuth( Supabase linkIdentity )로 보냅니다.
+// 호환용 폴백 — UI는 lib/discord/startDiscordLink.ts (브라우저 직접 OAuth)를 씁니다.
+// 직접 링크/북마크가 이 API를 칠 때만 여기로 옵니다.
 export async function GET(request: Request) {
   const { origin, searchParams } = new URL(request.url);
   const requestedNext = searchParams.get("next");

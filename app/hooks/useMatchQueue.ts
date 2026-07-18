@@ -34,6 +34,8 @@ export type ActiveMatch = {
     riotId: string | null;
     discordUsername: string | null;
     discordId: string | null;
+    // 상대가 Discord 계정을 연동했는지 (연락처 공개 여부와 별개)
+    discordLinked: boolean;
     reputation: UserReputation | null;
   };
 };
@@ -60,6 +62,19 @@ export type MatchQueueStatus = {
   pendingReview: PendingMatchReview | null;
 };
 
+// 어떤 버튼이 돌아가는 중인지 — 전역으로 전부 잠그지 않기 위함
+export type PendingAction =
+  | null
+  | "join"
+  | "leave"
+  | "dismiss"
+  | "cancelSetup"
+  | "setupReady"
+  | "connection"
+  | "review"
+  | "acceptNoVoice"
+  | "declineNoVoice";
+
 const defaultStatus: MatchQueueStatus = {
   inQueue: false,
   queueCount: 0,
@@ -69,10 +84,23 @@ const defaultStatus: MatchQueueStatus = {
   pendingReview: null,
 };
 
+const JOIN_TIMEOUT_MS = 15_000;
+
+function patchActiveMatch(
+  prev: MatchQueueStatus,
+  patch: Partial<ActiveMatch>,
+): MatchQueueStatus {
+  if (!prev.activeMatch) return prev;
+  return { ...prev, activeMatch: { ...prev.activeMatch, ...patch } };
+}
+
 export function useMatchQueue() {
   const [status, setStatus] = useState<MatchQueueStatus>(defaultStatus);
   const [loading, setLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+
+  // 예전 컴포넌트 호환: "뭔가 하나라도 처리 중"
+  const actionLoading = pendingAction !== null;
 
   const refresh = useCallback(async () => {
     try {
@@ -104,14 +132,25 @@ export function useMatchQueue() {
     return () => window.clearInterval(intervalId);
   }, [refresh]);
 
-const JOIN_TIMEOUT_MS = 15_000;
-
   async function joinQueue(): Promise<{
     ok: boolean;
     errorKey?: string;
     cooldownUntil?: string;
   }> {
-    setActionLoading(true);
+    setPendingAction("join");
+
+    // 롤백용으로 바꿀 필드만 기억 (snapshot 전체 저장 대신)
+    // 이유: snapshot 전체를 저장하면 비동기 중 refresh() 가 업데이트한
+    //        서버 데이터까지 덮어쓸 수 있음 → 바꾼 필드만 되돌리는 게 안전
+    const prevInQueue = status.inQueue;
+    const prevJoinedAt = status.joinedAt;
+
+    setStatus((prev) => ({
+      ...prev,
+      inQueue: true,
+      joinedAt: prev.joinedAt ?? new Date().toISOString(),
+    }));
+
     try {
       const controller = new AbortController();
       const timeoutId = window.setTimeout(() => controller.abort(), JOIN_TIMEOUT_MS);
@@ -131,6 +170,8 @@ const JOIN_TIMEOUT_MS = 15_000;
       };
 
       if (!response.ok || !data.ok) {
+        // 바꾼 필드만 원래 값으로 되돌림
+        setStatus((prev) => ({ ...prev, inQueue: prevInQueue, joinedAt: prevJoinedAt }));
         return {
           ok: false,
           errorKey: data.errorKey ?? "join_failed",
@@ -138,10 +179,13 @@ const JOIN_TIMEOUT_MS = 15_000;
         };
       }
 
-      // 즉시 매칭된 경우 inQueue=true로 두면 안 됩니다 (매치 화면으로 가야 함).
-      // refresh()가 activeMatch를 감지해 매칭 화면으로 전환합니다.
-      if (!data.matched) {
-        // refresh 전에 즉시 큐 상태 반영 — status poll 실패해도 UI가 멈추지 않음
+      if (data.matched) {
+        setStatus((prev) => ({
+          ...prev,
+          inQueue: false,
+          queueCount: data.queueCount ?? prev.queueCount,
+        }));
+      } else {
         setStatus((prev) => ({
           ...prev,
           inQueue: true,
@@ -152,17 +196,23 @@ const JOIN_TIMEOUT_MS = 15_000;
       void refresh();
       return { ok: true };
     } catch (error) {
+      setStatus((prev) => ({ ...prev, inQueue: prevInQueue, joinedAt: prevJoinedAt }));
       if (error instanceof DOMException && error.name === "AbortError") {
         return { ok: false, errorKey: "join_failed" };
       }
       return { ok: false, errorKey: "join_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function leaveQueue(): Promise<{ ok: boolean; errorKey?: string }> {
-    setActionLoading(true);
+    setPendingAction("leave");
+    const prevInQueue = status.inQueue;
+    const prevJoinedAt = status.joinedAt;
+
+    setStatus((prev) => ({ ...prev, inQueue: false, joinedAt: null }));
+
     try {
       const response = await fetch("/api/match/queue/leave", { method: "POST" });
       const data = (await response.json()) as {
@@ -172,6 +222,7 @@ const JOIN_TIMEOUT_MS = 15_000;
       };
 
       if (!response.ok || !data.ok) {
+        setStatus((prev) => ({ ...prev, inQueue: prevInQueue, joinedAt: prevJoinedAt }));
         return { ok: false, errorKey: data.errorKey ?? "leave_failed" };
       }
 
@@ -184,14 +235,18 @@ const JOIN_TIMEOUT_MS = 15_000;
       void refresh();
       return { ok: true };
     } catch {
+      setStatus((prev) => ({ ...prev, inQueue: prevInQueue, joinedAt: prevJoinedAt }));
       return { ok: false, errorKey: "leave_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function dismissMatch(matchId: string): Promise<{ ok: boolean; errorKey?: string }> {
-    setActionLoading(true);
+    setPendingAction("dismiss");
+    const prevActiveMatch = status.activeMatch;
+    setStatus((prev) => ({ ...prev, activeMatch: null }));
+
     try {
       const response = await fetch("/api/match/dismiss", {
         method: "POST",
@@ -201,21 +256,25 @@ const JOIN_TIMEOUT_MS = 15_000;
       const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
       if (!response.ok || !data.ok) {
+        setStatus((prev) => ({ ...prev, activeMatch: prevActiveMatch }));
         return { ok: false, errorKey: data.errorKey ?? "dismiss_failed" };
       }
 
-      setStatus((prev) => ({ ...prev, activeMatch: null }));
       void refresh();
       return { ok: true };
     } catch {
+      setStatus((prev) => ({ ...prev, activeMatch: prevActiveMatch }));
       return { ok: false, errorKey: "dismiss_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function cancelSetup(matchId: string): Promise<{ ok: boolean; errorKey?: string }> {
-    setActionLoading(true);
+    setPendingAction("cancelSetup");
+    const prevActiveMatch = status.activeMatch;
+    setStatus((prev) => ({ ...prev, activeMatch: null }));
+
     try {
       const response = await fetch("/api/match/setup/cancel", {
         method: "POST",
@@ -225,21 +284,25 @@ const JOIN_TIMEOUT_MS = 15_000;
       const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
       if (!response.ok || !data.ok) {
+        setStatus((prev) => ({ ...prev, activeMatch: prevActiveMatch }));
         return { ok: false, errorKey: data.errorKey ?? "setup_cancel_failed" };
       }
 
-      setStatus((prev) => ({ ...prev, activeMatch: null }));
       void refresh();
       return { ok: true };
     } catch {
+      setStatus((prev) => ({ ...prev, activeMatch: prevActiveMatch }));
       return { ok: false, errorKey: "setup_cancel_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function markSetupReady(matchId: string): Promise<{ ok: boolean; errorKey?: string }> {
-    setActionLoading(true);
+    setPendingAction("setupReady");
+    const prevMySetupReady = status.activeMatch?.mySetupReady ?? false;
+    setStatus((prev) => patchActiveMatch(prev, { mySetupReady: true }));
+
     try {
       const response = await fetch("/api/match/setup/ready", {
         method: "POST",
@@ -249,15 +312,17 @@ const JOIN_TIMEOUT_MS = 15_000;
       const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
       if (!response.ok || !data.ok) {
+        setStatus((prev) => patchActiveMatch(prev, { mySetupReady: prevMySetupReady }));
         return { ok: false, errorKey: data.errorKey ?? "setup_ready_failed" };
       }
 
-      await refresh();
+      void refresh();
       return { ok: true };
     } catch {
+      setStatus((prev) => patchActiveMatch(prev, { mySetupReady: prevMySetupReady }));
       return { ok: false, errorKey: "setup_ready_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
     }
   }
 
@@ -266,7 +331,28 @@ const JOIN_TIMEOUT_MS = 15_000;
     voicePreference?: VoicePreference;
     partyCode?: string;
   }): Promise<{ ok: boolean; errorKey?: string }> {
-    setActionLoading(true);
+    setPendingAction("connection");
+
+    // 롤백용으로 바꿀 필드만 저장
+    const prevVoice = status.activeMatch?.myVoicePreference ?? null;
+    const prevPartyCode = status.activeMatch?.partyCode ?? null;
+    const prevPartyCodeByMe = status.activeMatch?.partyCodeByMe ?? false;
+
+    if (input.voicePreference !== undefined) {
+      setStatus((prev) =>
+        patchActiveMatch(prev, { myVoicePreference: input.voicePreference ?? null }),
+      );
+    }
+    if (input.partyCode !== undefined) {
+      const code = input.partyCode.trim();
+      setStatus((prev) =>
+        patchActiveMatch(prev, {
+          partyCode: code || prev.activeMatch?.partyCode || null,
+          partyCodeByMe: Boolean(code) || prev.activeMatch?.partyCodeByMe || false,
+        }),
+      );
+    }
+
     try {
       const response = await fetch("/api/match/connection", {
         method: "POST",
@@ -276,15 +362,30 @@ const JOIN_TIMEOUT_MS = 15_000;
       const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
       if (!response.ok || !data.ok) {
+        // 바꾼 필드만 원래 값으로 되돌림
+        setStatus((prev) =>
+          patchActiveMatch(prev, {
+            myVoicePreference: prevVoice,
+            partyCode: prevPartyCode,
+            partyCodeByMe: prevPartyCodeByMe,
+          }),
+        );
         return { ok: false, errorKey: data.errorKey ?? "connection_failed" };
       }
 
-      await refresh();
+      void refresh();
       return { ok: true };
     } catch {
+      setStatus((prev) =>
+        patchActiveMatch(prev, {
+          myVoicePreference: prevVoice,
+          partyCode: prevPartyCode,
+          partyCodeByMe: prevPartyCodeByMe,
+        }),
+      );
       return { ok: false, errorKey: "connection_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
     }
   }
 
@@ -293,7 +394,10 @@ const JOIN_TIMEOUT_MS = 15_000;
     positiveTags: string[];
     negativeTags: string[];
   }): Promise<{ ok: boolean; errorKey?: string }> {
-    setActionLoading(true);
+    setPendingAction("review");
+    const prevPendingReview = status.pendingReview;
+    setStatus((prev) => ({ ...prev, pendingReview: null }));
+
     try {
       const response = await fetch("/api/match/review/submit", {
         method: "POST",
@@ -303,21 +407,25 @@ const JOIN_TIMEOUT_MS = 15_000;
       const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
       if (!response.ok || !data.ok) {
+        setStatus((prev) => ({ ...prev, pendingReview: prevPendingReview }));
         return { ok: false, errorKey: data.errorKey ?? "review_submit_failed" };
       }
 
-      setStatus((prev) => ({ ...prev, pendingReview: null }));
       void refresh();
       return { ok: true };
     } catch {
+      setStatus((prev) => ({ ...prev, pendingReview: prevPendingReview }));
       return { ok: false, errorKey: "review_submit_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
     }
   }
 
   async function acceptPartnerNoVoice(matchId: string): Promise<{ ok: boolean; errorKey?: string }> {
-    setActionLoading(true);
+    setPendingAction("acceptNoVoice");
+    const prevAccepted = status.activeMatch?.myAcceptedPartnerNoVoice ?? false;
+    setStatus((prev) => patchActiveMatch(prev, { myAcceptedPartnerNoVoice: true }));
+
     try {
       const response = await fetch("/api/match/no-voice/accept", {
         method: "POST",
@@ -327,15 +435,48 @@ const JOIN_TIMEOUT_MS = 15_000;
       const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
       if (!response.ok || !data.ok) {
+        setStatus((prev) => patchActiveMatch(prev, { myAcceptedPartnerNoVoice: prevAccepted }));
         return { ok: false, errorKey: data.errorKey ?? "accept_failed" };
       }
 
-      await refresh();
+      void refresh();
       return { ok: true };
     } catch {
+      setStatus((prev) => patchActiveMatch(prev, { myAcceptedPartnerNoVoice: prevAccepted }));
       return { ok: false, errorKey: "accept_failed" };
     } finally {
-      setActionLoading(false);
+      setPendingAction(null);
+    }
+  }
+
+  // 상대 No Voice 거절 버튼 — 페널티 없는 전용 API (일반 dismiss와 분리)
+  async function declinePartnerNoVoice(
+    matchId: string,
+  ): Promise<{ ok: boolean; errorKey?: string }> {
+    setPendingAction("declineNoVoice");
+    const prevActiveMatch = status.activeMatch;
+    setStatus((prev) => ({ ...prev, activeMatch: null }));
+
+    try {
+      const response = await fetch("/api/match/no-voice/decline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId }),
+      });
+      const data = (await response.json()) as { ok?: boolean; errorKey?: string };
+
+      if (!response.ok || !data.ok) {
+        setStatus((prev) => ({ ...prev, activeMatch: prevActiveMatch }));
+        return { ok: false, errorKey: data.errorKey ?? "decline_failed" };
+      }
+
+      void refresh();
+      return { ok: true };
+    } catch {
+      setStatus((prev) => ({ ...prev, activeMatch: prevActiveMatch }));
+      return { ok: false, errorKey: "decline_failed" };
+    } finally {
+      setPendingAction(null);
     }
   }
 
@@ -343,6 +484,7 @@ const JOIN_TIMEOUT_MS = 15_000;
     status,
     loading,
     actionLoading,
+    pendingAction,
     refresh,
     joinQueue,
     leaveQueue,
@@ -352,5 +494,6 @@ const JOIN_TIMEOUT_MS = 15_000;
     updateConnection,
     submitReview,
     acceptPartnerNoVoice,
+    declinePartnerNoVoice,
   };
 }

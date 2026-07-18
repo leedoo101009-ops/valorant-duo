@@ -47,8 +47,11 @@ export type ActiveMatchResponse = {
   partner: {
     displayName: string | null;
     riotId: string | null;
+    // Discord 연락처는 상대가 discord 보이스를 고른 때만 노출 (프라이버시)
     discordUsername: string | null;
     discordId: string | null;
+    // 연동 여부만 — 보이스 선택과 무관하게 true/false (UI가 "미연동" 오판하지 않게)
+    discordLinked: boolean;
     reputation: UserReputation | null;
   };
 };
@@ -98,7 +101,10 @@ async function getActiveMatchForUser(
     : match.user_a_voice_preference;
   const mySetupReady = isUserA ? match.user_a_setup_ready : match.user_b_setup_ready;
   const partnerSetupReady = isUserA ? match.user_b_setup_ready : match.user_a_setup_ready;
+  // 상대 Discord ID/닉네임은 discord 보이스일 때만 공유.
+  // 연동 여부(discordLinked)는 항상 내려서, 다른 마이크 선택 시 "미연동"으로 오인하지 않게 함.
   const sharePartnerDiscord = partnerVoicePreference === "discord";
+  const partnerDiscordLinked = Boolean(partnerProfile.discordId);
 
   const phase = (match.match_phase ?? "connecting") as MatchPhase;
   const voiceIncomplete = !myVoicePreference || !partnerVoicePreference;
@@ -143,6 +149,7 @@ async function getActiveMatchForUser(
       riotId: partnerProfile.riotId,
       discordUsername: sharePartnerDiscord ? partnerProfile.discordUsername : null,
       discordId: sharePartnerDiscord ? partnerProfile.discordId : null,
+      discordLinked: partnerDiscordLinked,
       reputation: partnerProfile.reputation,
     },
   };

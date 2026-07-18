@@ -122,8 +122,20 @@ function HeroHud({
 
 export default function HeroSection() {
   const { t } = useLanguage();
-  const { status, actionLoading, joinQueue, leaveQueue, dismissMatch, cancelSetup, markSetupReady, updateConnection, submitReview, acceptPartnerNoVoice } =
-    useMatchQueue();
+  const {
+    status,
+    actionLoading,
+    pendingAction,
+    joinQueue,
+    leaveQueue,
+    dismissMatch,
+    cancelSetup,
+    markSetupReady,
+    updateConnection,
+    submitReview,
+    acceptPartnerNoVoice,
+    declinePartnerNoVoice,
+  } = useMatchQueue();
 
   return (
     <section className="relative min-h-screen bg-black">
@@ -161,6 +173,7 @@ export default function HeroSection() {
           <MatchQueueControls
             status={status}
             actionLoading={actionLoading}
+            pendingAction={pendingAction}
             joinQueue={joinQueue}
             leaveQueue={leaveQueue}
             dismissMatch={dismissMatch}
@@ -169,6 +182,7 @@ export default function HeroSection() {
             updateConnection={updateConnection}
             submitReview={submitReview}
             acceptPartnerNoVoice={acceptPartnerNoVoice}
+            declinePartnerNoVoice={declinePartnerNoVoice}
           />
         </div>
 

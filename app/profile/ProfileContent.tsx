@@ -11,6 +11,7 @@ import { GRADE_STYLES } from "@/lib/reputation/scoring";
 import type { ReviewTagStat, UserReputation } from "@/lib/reputation/types";
 import { getQueueLabel } from "@/lib/riot/agents";
 import { formatValorantTierLabel } from "@/lib/riot/tierLabels";
+import { startDiscordLink } from "@/lib/discord/startDiscordLink";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/supabase/profile";
 import type { ValorantMatch } from "@/lib/supabase/valorant";
@@ -103,6 +104,7 @@ function ProfileContentInner({
   const [linkingRiot, setLinkingRiot] = useState(false);
   const [unlinkingRiot, setUnlinkingRiot] = useState(false);
   const [unlinkingDiscord, setUnlinkingDiscord] = useState(false);
+  const [linkingDiscord, setLinkingDiscord] = useState(false);
   const [syncingMatches, setSyncingMatches] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
@@ -290,8 +292,11 @@ function ProfileContentInner({
 
   async function handleSyncMatches() {
     setMessage(null);
-    await runMatchSync(true);
-    router.refresh();
+    setSyncingMatches(true); // 클릭 즉시 버튼 문구 변경
+    const ok = await runMatchSync(true);
+    if (ok) {
+      void router.refresh();
+    }
   }
 
   async function handleUnlinkRiot() {
@@ -300,10 +305,21 @@ function ProfileContentInner({
     setMessage(null);
     setIsError(false);
 
+    // 클릭 즉시 UI에서 해제된 것처럼 보이게
+    const snapshot = profile;
+    setProfile((prev) => ({
+      ...prev,
+      riot_id: null,
+      tier: null,
+      ranked_rating: null,
+    }));
+    setMessage(t.profile.unlinkRiotSuccess);
+
     const response = await fetch("/api/riot/unlink", { method: "POST" });
     const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
     if (!response.ok || !data.ok) {
+      setProfile(snapshot);
       setIsError(true);
       if (data.errorKey === "active_match_exists") {
         setMessage(t.profile.unlinkActiveMatch);
@@ -314,15 +330,24 @@ function ProfileContentInner({
       return;
     }
 
-    setProfile((prev) => ({
-      ...prev,
-      riot_id: null,
-      tier: null,
-      ranked_rating: null,
-    }));
-    setMessage(t.profile.unlinkRiotSuccess);
     setUnlinkingRiot(false);
-    router.refresh();
+    void router.refresh();
+  }
+
+  // 클릭 즉시 "이동 중…" → 브라우저에서 Discord OAuth (우리 API 우회)
+  async function handleLinkDiscord() {
+    setLinkingDiscord(true);
+    setMessage(null);
+    setIsError(false);
+
+    const result = await startDiscordLink("/profile?discord_linked=1");
+    if (!result.ok && result.errorKey !== "login_required") {
+      setLinkingDiscord(false);
+      setIsError(true);
+      const errors = t.profile.discordErrors as Record<string, string>;
+      setMessage(errors[result.errorKey ?? "authorize_failed"] ?? errors.authorize_failed);
+    }
+    // ok면 Discord로 페이지 이동 — 버튼 상태는 그대로 두어도 됨
   }
 
   async function handleUnlinkDiscord() {
@@ -331,10 +356,15 @@ function ProfileContentInner({
     setMessage(null);
     setIsError(false);
 
+    const snapshot = profile;
+    setProfile((prev) => ({ ...prev, discord_username: null, discord_id: null }));
+    setMessage(t.profile.unlinkDiscordSuccess);
+
     const response = await fetch("/api/discord/unlink", { method: "POST" });
     const data = (await response.json()) as { ok?: boolean; errorKey?: string };
 
     if (!response.ok || !data.ok) {
+      setProfile(snapshot);
       setIsError(true);
       if (data.errorKey === "active_match_exists") {
         setMessage(t.profile.unlinkActiveMatch);
@@ -345,10 +375,8 @@ function ProfileContentInner({
       return;
     }
 
-    setProfile((prev) => ({ ...prev, discord_username: null, discord_id: null }));
-    setMessage(t.profile.unlinkDiscordSuccess);
     setUnlinkingDiscord(false);
-    router.refresh();
+    void router.refresh();
   }
 
   return (
@@ -485,14 +513,14 @@ function ProfileContentInner({
             )}
 
             {!profile.discord_username && (
-              <div className="mt-5 space-y-2">
-                <a href="/api/discord/authorize" className="btn-outline flex w-full !py-3">
-                  {t.profile.linkDiscord}
-                </a>
-                <p className="font-display text-[10px] tracking-widest text-[#555]">
-                  {t.profile.linkDiscordHint}
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => void handleLinkDiscord()}
+                disabled={linkingDiscord}
+                className="btn-outline mt-5 flex w-full !py-3 disabled:opacity-50"
+              >
+                {linkingDiscord ? t.profile.discordRedirecting : t.profile.linkDiscord}
+              </button>
             )}
           </div>
 

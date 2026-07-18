@@ -15,11 +15,18 @@ import {
   markMatchGuidelinesSeen,
   shouldShowMatchGuidelines,
 } from "@/lib/match/guidelinesStorage";
-import type { ActiveMatch, MatchQueueStatus, VoicePreference } from "../hooks/useMatchQueue";
+import { startDiscordLink } from "@/lib/discord/startDiscordLink";
+import type {
+  ActiveMatch,
+  MatchQueueStatus,
+  PendingAction,
+  VoicePreference,
+} from "../hooks/useMatchQueue";
 
 type MatchQueueControlsProps = {
   status: MatchQueueStatus;
   actionLoading: boolean;
+  pendingAction?: PendingAction;
   joinQueue: () => Promise<{ ok: boolean; errorKey?: string; cooldownUntil?: string }>;
   leaveQueue: () => Promise<{ ok: boolean; errorKey?: string }>;
   dismissMatch: (matchId: string) => Promise<{ ok: boolean; errorKey?: string }>;
@@ -36,6 +43,8 @@ type MatchQueueControlsProps = {
     negativeTags: string[];
   }) => Promise<{ ok: boolean; errorKey?: string }>;
   acceptPartnerNoVoice: (matchId: string) => Promise<{ ok: boolean; errorKey?: string }>;
+  // No Voice 거절 전용 — 페널티 없음 (일반 dismiss와 다름)
+  declinePartnerNoVoice: (matchId: string) => Promise<{ ok: boolean; errorKey?: string }>;
 };
 
 function partnerLabel(partner: ActiveMatch["partner"]): string {
@@ -101,6 +110,7 @@ function voiceChoiceLabel(
 export default function MatchQueueControls({
   status,
   actionLoading,
+  pendingAction = null,
   joinQueue,
   leaveQueue,
   dismissMatch,
@@ -109,7 +119,10 @@ export default function MatchQueueControls({
   updateConnection,
   submitReview,
   acceptPartnerNoVoice,
+  declinePartnerNoVoice,
 }: MatchQueueControlsProps) {
+  // 해당 액션만 로딩 — 다른 버튼까지 전부 잠그지 않음
+  const busy = (action: NonNullable<PendingAction>) => pendingAction === action;
   const { t } = useLanguage();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -121,6 +134,7 @@ export default function MatchQueueControls({
   const [now, setNow] = useState(() => Date.now());
   const [showGuidelinesModal, setShowGuidelinesModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [discordRedirecting, setDiscordRedirecting] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -234,8 +248,11 @@ export default function MatchQueueControls({
   }, [showVoiceCountdown, showSetupCountdown, voiceDeadline, setupDeadline, activeMatch?.id]);
 
   async function proceedJoinQueue() {
-    const result = await joinQueue();
     setShowGuidelinesModal(false);
+    setIsError(false);
+    setMessage(t.matchQueue.joining); // 클릭 즉시 피드백
+
+    const result = await joinQueue();
 
     if (!result.ok) {
       setIsError(true);
@@ -243,7 +260,6 @@ export default function MatchQueueControls({
       setLastErrorKey(key);
 
       if (key === "match_cooldown_active" && result.cooldownUntil) {
-        // 쿨다운 종료 시각을 로컬 시간으로 포맷해서 표시
         const until = new Date(result.cooldownUntil).toLocaleTimeString();
         const errors = t.matchQueue.errors as Record<string, string>;
         const base = errors["match_cooldown_active"] ?? "큐 이용 제한 중입니다.";
@@ -255,9 +271,7 @@ export default function MatchQueueControls({
       return;
     }
 
-    if (!status.activeMatch) {
-      setMessage(t.matchQueue.joined);
-    }
+    setMessage(t.matchQueue.joined);
   }
 
   async function handleStartMatching() {
@@ -289,9 +303,9 @@ export default function MatchQueueControls({
   }
 
   async function handleLeaveQueue() {
-    setMessage(null);
     setIsError(false);
     setLastErrorKey(null);
+    setMessage(t.matchQueue.left);
 
     const result = await leaveQueue();
     if (!result.ok) {
@@ -300,32 +314,45 @@ export default function MatchQueueControls({
       setLastErrorKey(key);
       const errors = t.matchQueue.errors as Record<string, string>;
       setMessage(errors[key] ?? errors.leave_failed);
-      return;
     }
-
-    setMessage(t.matchQueue.left);
   }
 
   async function handleDismissMatch() {
     if (!status.activeMatch) return;
 
-    setMessage(null);
     setIsError(false);
+    setMessage(t.matchQueue.dismissed);
 
     const result = await dismissMatch(status.activeMatch.id);
     if (!result.ok) {
       setIsError(true);
       const errors = t.matchQueue.errors as Record<string, string>;
       setMessage(errors[result.errorKey ?? "dismiss_failed"] ?? errors.dismiss_failed);
-      return;
     }
+  }
 
+  // 「상대가 No Voice → 매칭 취소」버튼 전용 (페널티 없음)
+  async function handleDeclinePartnerNoVoice() {
+    if (!status.activeMatch) return;
+
+    setIsError(false);
     setMessage(t.matchQueue.dismissed);
+
+    const result = await declinePartnerNoVoice(status.activeMatch.id);
+    if (!result.ok) {
+      setIsError(true);
+      const errors = t.matchQueue.errors as Record<string, string>;
+      setMessage(errors[result.errorKey ?? "decline_failed"] ?? errors.decline_failed);
+    }
   }
 
   async function handleVoiceSelect(voicePreference: VoicePreference) {
     const activeMatch = status.activeMatch;
     if (!activeMatch) return;
+
+    // 화면은 hook에서 즉시 반영 — 성공 메시지도 바로
+    setIsError(false);
+    setMessage(t.matchQueue.voiceSaved);
 
     const result = await updateConnection({
       matchId: activeMatch.id,
@@ -336,84 +363,77 @@ export default function MatchQueueControls({
       setIsError(true);
       const errors = t.matchQueue.errors as Record<string, string>;
       setMessage(errors[result.errorKey ?? "connection_failed"] ?? errors.connection_failed);
-      return;
     }
-
-    setIsError(false);
-    setMessage(t.matchQueue.voiceSaved);
   }
 
   async function handleSharePartyCode() {
     const activeMatch = status.activeMatch;
     if (!activeMatch) return;
 
-    const result = await updateConnection({
-      matchId: activeMatch.id,
-      partyCode: partyCodeInput,
-    });
-
-    if (!result.ok) {
-      setIsError(true);
-      const errors = t.matchQueue.errors as Record<string, string>;
-      setMessage(errors[result.errorKey ?? "connection_failed"] ?? errors.connection_failed);
-      return;
-    }
-
+    const code = partyCodeInput.trim();
     setPartyCodeInput("");
     setIsError(false);
     setMessage(t.matchQueue.partyCodeShared);
+
+    const result = await updateConnection({
+      matchId: activeMatch.id,
+      partyCode: code,
+    });
+
+    if (!result.ok) {
+      setPartyCodeInput(code);
+      setIsError(true);
+      const errors = t.matchQueue.errors as Record<string, string>;
+      setMessage(errors[result.errorKey ?? "connection_failed"] ?? errors.connection_failed);
+    }
   }
 
   async function handleSetupComplete() {
     if (!status.activeMatch) return;
+
+    setIsError(false);
+    setMessage(t.matchQueue.setupReadySaved);
 
     const result = await markSetupReady(status.activeMatch.id);
     if (!result.ok) {
       setIsError(true);
       const errors = t.matchQueue.errors as Record<string, string>;
       setMessage(errors[result.errorKey ?? "setup_ready_failed"] ?? errors.setup_ready_failed);
-      return;
     }
-
-    setIsError(false);
-    setMessage(t.matchQueue.setupReadySaved);
   }
 
   async function handleSetupCancel() {
     if (!status.activeMatch) return;
 
-    setMessage(null);
     setIsError(false);
+    setMessage(t.matchQueue.setupCancelled);
 
     const result = await cancelSetup(status.activeMatch.id);
     if (!result.ok) {
       setIsError(true);
       const errors = t.matchQueue.errors as Record<string, string>;
       setMessage(errors[result.errorKey ?? "setup_cancel_failed"] ?? errors.setup_cancel_failed);
-      return;
     }
-
-    setMessage(t.matchQueue.setupCancelled);
   }
 
   async function handleEndInGameSession() {
     if (!status.activeMatch) return;
+
+    setIsError(false);
+    setMessage(t.matchQueue.dismissed);
 
     const result = await dismissMatch(status.activeMatch.id);
     if (!result.ok) {
       setIsError(true);
       const errors = t.matchQueue.errors as Record<string, string>;
       setMessage(errors[result.errorKey ?? "dismiss_failed"] ?? errors.dismiss_failed);
-      return;
     }
-
-    setMessage(t.matchQueue.dismissed);
   }
 
   async function handleAcceptPartnerNoVoice() {
     if (!status.activeMatch) return;
 
-    setMessage(null);
+    setMessage(t.matchQueue.acceptNoVoiceSuccess);
     setIsError(false);
 
     const result = await acceptPartnerNoVoice(status.activeMatch.id);
@@ -421,11 +441,7 @@ export default function MatchQueueControls({
       setIsError(true);
       const errors = t.matchQueue.errors as Record<string, string>;
       setMessage(errors[result.errorKey ?? "accept_failed"] ?? errors.accept_failed);
-      return;
     }
-
-    setIsError(false);
-    setMessage(t.matchQueue.acceptNoVoiceSuccess);
   }
 
   async function handleCopy(value: string) {
@@ -434,9 +450,20 @@ export default function MatchQueueControls({
     setMessage(ok ? t.matchQueue.copied : t.matchQueue.errors.copy_failed);
   }
 
-  const discordAuthorizeHref = `/api/discord/authorize?next=${encodeURIComponent(
-    "/?discord_linked=1",
-  )}`;
+  async function handleLinkDiscord() {
+    setDiscordRedirecting(true);
+    setMessage(null);
+    setIsError(false);
+
+    const result = await startDiscordLink("/?discord_linked=1");
+    if (!result.ok && result.errorKey !== "login_required") {
+      setDiscordRedirecting(false);
+      setIsError(true);
+      const errors = t.matchQueue.errors as Record<string, string>;
+      setMessage(errors.discord_authorize_failed ?? t.matchQueue.discordLinkNeeded);
+    }
+  }
+
   const partnerChoseNoVoice = partnerVoice === "none" && myVoice !== null && myVoice !== "none";
   const iChoseNoVoice = myVoice === "none" && partnerVoice !== null && partnerVoice !== "none";
   const bothChoseNoVoice = myVoice === "none" && partnerVoice === "none";
@@ -461,7 +488,7 @@ export default function MatchQueueControls({
       <MatchGuidelinesModal
         open={showGuidelinesModal}
         isFirstTime={user ? !hasSeenMatchGuidelines(user.id) : true}
-        loading={actionLoading}
+        loading={busy("join")}
         labels={{
           title: t.matchQueue.guidelines.title,
           intro: t.matchQueue.guidelines.intro,
@@ -482,7 +509,7 @@ export default function MatchQueueControls({
       <MatchReviewModal
         open={showReviewModal}
         pendingReview={status.pendingReview}
-        loading={actionLoading}
+        loading={busy("review")}
         labels={{
           title: t.matchReview.title,
           subtitle: t.matchReview.subtitle,
@@ -502,7 +529,7 @@ export default function MatchQueueControls({
       {activeMatch?.phase === "in_game" ? (
         <MatchInGamePanel
           activeMatch={activeMatch}
-          actionLoading={actionLoading}
+          actionLoading={busy("dismiss")}
           onEndSession={handleEndInGameSession}
           labels={{
             inGameTitle: t.matchQueue.inGameTitle,
@@ -619,8 +646,8 @@ export default function MatchQueueControls({
                 <button
                   key={voice}
                   type="button"
-                  onClick={() => handleVoiceSelect(voice)}
-                  disabled={actionLoading}
+                  onClick={() => void handleVoiceSelect(voice)}
+                  disabled={busy("connection")}
                   className={`border px-4 py-3 font-display text-[10px] tracking-widest transition-colors disabled:opacity-50 ${
                     myVoice === voice
                       ? "border-[#ff4655] bg-[#ff4655]/10 text-white"
@@ -640,18 +667,22 @@ export default function MatchQueueControls({
                 <button
                   type="button"
                   onClick={() => void handleAcceptPartnerNoVoice()}
-                  disabled={actionLoading}
+                  disabled={busy("acceptNoVoice") || busy("declineNoVoice")}
                   className="btn-accent !py-3 disabled:opacity-50"
                 >
-                  {actionLoading ? t.matchQueue.acceptingNoVoice : t.matchQueue.acceptNoVoice}
+                  {busy("acceptNoVoice")
+                    ? t.matchQueue.acceptingNoVoice
+                    : t.matchQueue.acceptNoVoice}
                 </button>
                 <button
                   type="button"
-                  onClick={handleDismissMatch}
-                  disabled={actionLoading}
+                  onClick={() => void handleDeclinePartnerNoVoice()}
+                  disabled={busy("acceptNoVoice") || busy("declineNoVoice")}
                   className="btn-outline !py-3 disabled:opacity-50"
                 >
-                  {actionLoading ? t.matchQueue.dismissing : t.matchQueue.dismissNoVoiceMatch}
+                  {busy("declineNoVoice")
+                    ? t.matchQueue.dismissing
+                    : t.matchQueue.dismissNoVoiceMatch}
                 </button>
               </div>
             </div>
@@ -698,7 +729,7 @@ export default function MatchQueueControls({
                 <button
                   type="button"
                   onClick={handleSharePartyCode}
-                  disabled={actionLoading || !partyCodeInput.trim()}
+                  disabled={busy("connection") || !partyCodeInput.trim()}
                   className="btn-accent !py-3 disabled:opacity-50"
                 >
                   {t.matchQueue.sharePartyCode}
@@ -739,9 +770,16 @@ export default function MatchQueueControls({
               {!activeMatch.me.discordId ? (
                 <div className="space-y-3">
                   <p className="text-sm text-[#c9d1ff]">{t.matchQueue.discordLinkNeeded}</p>
-                  <a href={discordAuthorizeHref} className="btn-accent !py-3">
-                    {t.matchQueue.linkDiscordNow}
-                  </a>
+                  <button
+                    type="button"
+                    onClick={() => void handleLinkDiscord()}
+                    disabled={discordRedirecting}
+                    className="btn-accent !py-3 disabled:opacity-50"
+                  >
+                    {discordRedirecting
+                      ? t.matchQueue.discordRedirecting
+                      : t.matchQueue.linkDiscordNow}
+                  </button>
                 </div>
               ) : (
                 <>
@@ -749,8 +787,13 @@ export default function MatchQueueControls({
                     {t.matchQueue.myDiscordReady}: {activeMatch.me.discordUsername}
                   </p>
 
-                  {activeMatch.partner.discordId &&
-                  activeMatch.partnerVoicePreference === "discord" ? (
+                  {/*
+                    예전 버그: 상대가 Valorant 등 다른 마이크를 고르면 API가
+                    discordId를 숨기는데, UI가 그걸 "미연동"으로 착각했음.
+                    → 미연동 문구는 상대가 discord를 골랐고, 실제로 연동 안 됐을 때만.
+                  */}
+                  {activeMatch.partnerVoicePreference === "discord" &&
+                  activeMatch.partner.discordId ? (
                     <div className="space-y-3">
                       <p className="font-display text-sm font-bold text-white">
                         {activeMatch.partner.discordUsername}
@@ -777,9 +820,10 @@ export default function MatchQueueControls({
                         )}
                       </div>
                     </div>
-                  ) : (
+                  ) : activeMatch.partnerVoicePreference === "discord" &&
+                    activeMatch.partner.discordLinked === false ? (
                     <p className="text-sm text-[#888]">{t.matchQueue.partnerDiscordMissing}</p>
-                  )}
+                  ) : null}
                 </>
               )}
             </div>
@@ -807,23 +851,28 @@ export default function MatchQueueControls({
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button
                   type="button"
-                  onClick={handleSetupComplete}
+                  onClick={() => void handleSetupComplete()}
                   disabled={
-                    actionLoading ||
+                    busy("setupReady") ||
+                    busy("cancelSetup") ||
                     activeMatch.phase !== "setup" ||
                     activeMatch.mySetupReady
                   }
                   className="btn-accent !py-3 disabled:opacity-50"
                 >
-                  {actionLoading ? t.matchQueue.completingSetup : t.matchQueue.completeSetup}
+                  {busy("setupReady")
+                    ? t.matchQueue.completingSetup
+                    : t.matchQueue.completeSetup}
                 </button>
                 <button
                   type="button"
-                  onClick={handleSetupCancel}
-                  disabled={actionLoading}
+                  onClick={() => void handleSetupCancel()}
+                  disabled={busy("setupReady") || busy("cancelSetup")}
                   className="btn-outline !py-3 disabled:opacity-50"
                 >
-                  {actionLoading ? t.matchQueue.cancellingSetup : t.matchQueue.cancelSetup}
+                  {busy("cancelSetup")
+                    ? t.matchQueue.cancellingSetup
+                    : t.matchQueue.cancelSetup}
                 </button>
               </div>
               {activeMatch.phase !== "setup" && (
@@ -837,21 +886,21 @@ export default function MatchQueueControls({
           {status.inQueue ? (
             <button
               type="button"
-              onClick={handleLeaveQueue}
-              disabled={actionLoading}
+              onClick={() => void handleLeaveQueue()}
+              disabled={busy("leave")}
               className="btn-outline disabled:opacity-50"
             >
-              {actionLoading ? t.matchQueue.leaving : t.matchQueue.cancel}
+              {busy("leave") ? t.matchQueue.leaving : t.matchQueue.cancel}
             </button>
           ) : (
             <button
               type="button"
-              onClick={handleStartMatching}
-              disabled={!authReady || actionLoading}
+              onClick={() => void handleStartMatching()}
+              disabled={!authReady || busy("join")}
               className="btn-accent disabled:opacity-50"
             >
-              {actionLoading ? t.matchQueue.joining : t.hero.startMatching}
-              {!actionLoading && (
+              {busy("join") ? t.matchQueue.joining : t.hero.startMatching}
+              {!busy("join") && (
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" />
                 </svg>
