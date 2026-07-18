@@ -35,6 +35,7 @@ export type ExecutePlanAnalysisResult = {
     situational_notes?: string | null;
     anomaly_notes?: string | null;
     synergy_notes?: string | null;
+    match_prefs?: Record<string, unknown> | null;
   };
   reason?: "not_enough_matches" | "analysis_unavailable" | "save_failed";
 };
@@ -82,6 +83,8 @@ export async function executePlanAnalysis(
       p_situational_notes: analysis.situational_notes,
       p_anomaly_notes: analysis.anomaly_notes,
       p_synergy_notes: analysis.synergy_notes,
+      // 매칭 엔진이 읽는 구조화 힌트 (문장 synergy_notes와 별개)
+      p_match_prefs: analysis.match_prefs,
     });
 
     if (saveError) {
@@ -102,11 +105,13 @@ export async function executePlanAnalysis(
         situational_notes: analysis.situational_notes,
         anomaly_notes: analysis.anomaly_notes,
         synergy_notes: analysis.synergy_notes,
+        match_prefs: analysis.match_prefs,
       },
     };
   }
 
   // ── free: 규칙기반만 (Gemini 호출 제거) ─────────────────
+  // free는 Claude/match_prefs 없음 → 매칭은 aggression+role만.
   // [롤백용] Gemini 경로를 다시 쓰려면:
   //   1) gemini.ts 의 analyzePlaystyleWithGemini import 복구
   //   2) aggregate에 Gemini용 PlaystyleInput 집계 함수를 git에서 복원
@@ -119,6 +124,8 @@ export async function executePlanAnalysis(
     p_aggression_score: rule.aggression_score,
     p_role_preference: rule.role_preference,
     p_analysis_source: "rule_based",
+    // 예전에 premium이었다가 내려온 경우 prefs 잔여분 제거
+    p_match_prefs: null,
   });
 
   if (saveError) {
@@ -139,6 +146,7 @@ export async function executePlanAnalysis(
       situational_notes: null,
       anomaly_notes: null,
       synergy_notes: null,
+      match_prefs: null,
     },
   };
 }

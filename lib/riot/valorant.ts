@@ -38,6 +38,8 @@ type MatchPlayer = {
   puuid: string;
   teamId: string;
   characterId: string;
+  // 경쟁전 매치에만 존재 — Riot competitive tier ID (3=Iron1 … 27=Radiant)
+  competitiveTier?: number;
   stats?: {
     score: number;
     roundsPlayed: number;
@@ -288,6 +290,7 @@ async function resolveMatchlist(
 }
 
 // 매치 목록 → 상세 조회 → 파싱 (Riot rate limit 준수를 위해 호출 사이 딜레이)
+// inferredRiotTier: 최근 경쟁전 상세의 competitiveTier (랭크 API 실패 시 폴백용)
 export async function collectRecentValorantMatches(
   puuid: string,
   count = DEFAULT_MATCH_COUNT,
@@ -296,6 +299,7 @@ export async function collectRecentValorantMatches(
   fetched: number;
   skipped: number;
   shard?: string | null;
+  inferredRiotTier?: number | null;
   errorKey?: RiotApiErrorKey;
   status: number;
 }> {
@@ -312,17 +316,26 @@ export async function collectRecentValorantMatches(
       fetched: 0,
       skipped: 0,
       shard,
+      inferredRiotTier: null,
       errorKey,
       status: listStatus,
     };
   }
 
   if (!shard || entries.length === 0) {
-    return { matches: [], fetched: 0, skipped: 0, shard, status: 200 };
+    return {
+      matches: [],
+      fetched: 0,
+      skipped: 0,
+      shard,
+      inferredRiotTier: null,
+      status: 200,
+    };
   }
 
   const matches: ParsedValorantMatch[] = [];
   let skipped = 0;
+  let inferredRiotTier: number | null = null;
 
   for (let i = 0; i < entries.length; i += 1) {
     if (i > 0) {
@@ -342,6 +355,7 @@ export async function collectRecentValorantMatches(
         fetched: matches.length,
         skipped,
         shard,
+        inferredRiotTier,
         errorKey: detailError ?? "rate_limit",
         status: 429,
       };
@@ -353,6 +367,7 @@ export async function collectRecentValorantMatches(
         fetched: matches.length,
         skipped,
         shard,
+        inferredRiotTier,
         errorKey: detailError,
         status,
       };
@@ -368,6 +383,15 @@ export async function collectRecentValorantMatches(
       continue;
     }
 
+    // 경쟁전 상세에 붙은 competitiveTier — 가장 최근(먼저 나온) 유효 값만 보관
+    if (inferredRiotTier == null) {
+      const me = match.players.find((p) => p.puuid === puuid);
+      const ct = me?.competitiveTier;
+      if (typeof ct === "number" && ct >= 3) {
+        inferredRiotTier = ct;
+      }
+    }
+
     const parsed = parsePlayerMatchStats(match, puuid);
     if (!parsed) {
       skipped += 1;
@@ -377,7 +401,14 @@ export async function collectRecentValorantMatches(
     matches.push(parsed);
   }
 
-  return { matches, fetched: matches.length, skipped, shard, status: 200 };
+  return {
+    matches,
+    fetched: matches.length,
+    skipped,
+    shard,
+    inferredRiotTier,
+    status: 200,
+  };
 }
 
 export const SYNC_COOLDOWN_MS = 5 * 60 * 1000;

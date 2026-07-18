@@ -8,7 +8,13 @@
 // 계층적 조건 (요구사항):
 //   1) 하드 조건 — 무조건 만족 (티어 범위, 큐 활성 상태)
 //   2) 소프트 조건 — AI 분석 기반 가산점 (공격성 상호보완, 역할 비겹침)
+//      + premium이면 match_prefs 힌트로 후보 순위만 더 세밀하게 (거절 필터 아님)
 //   3) 시간 완화 — 오래 기다릴수록 소프트 조건을 점점 무시하고 매칭을 성사시킴
+
+import {
+  scorePrefsAgainstPartner,
+  type MatchPrefs,
+} from "@/lib/matching/matchPrefs";
 
 // ─── 상수 ────────────────────────────────────────────────
 
@@ -18,9 +24,14 @@ export const PRESENCE_ACTIVE_THRESHOLD_SEC = 90;
 // 티어 허용 범위 — 현재 티어 ±N 단계까지 매칭 허용
 export const TIER_RANGE = 3;
 
-// 소프트 점수 가중치 (합 = 1)
+// 기본 소프트 점수 가중치 (합 = 1) — free / prefs 없을 때
 const WEIGHT_AGGRESSION = 0.5;
 const WEIGHT_ROLE = 0.5;
+
+// premium 힌트가 있을 때: 기본 궁합 65% + prefs 힌트 35%
+// (힌트만으로 매칭을 막지 않고, 같은 후보 중 순위를 바꿈)
+const WEIGHT_BASE_WITH_PREFS = 0.65;
+const WEIGHT_PREFS = 0.35;
 
 // 공격성 "상호보완"의 이상적인 차이.
 // 0이면 둘 다 똑같은 성향(재미없음), 너무 크면 스타일 충돌.
@@ -45,6 +56,10 @@ export type MatchProfile = {
   rolePreference: string | null; // 예: "duelist"
   // 마지막 heartbeat 후 경과 초 — 하드 조건(활성) 판정용
   secondsSinceLastSeen: number;
+  // premium일 때만 matchPrefs가 채워짐. free는 plan="free", prefs=null.
+  plan: "free" | "premium";
+  playstyleTags: string[];
+  matchPrefs: MatchPrefs | null;
 };
 
 export type MatchResult = {
@@ -104,12 +119,51 @@ function roleSynergy(a: MatchProfile, b: MatchProfile): number {
   return a.rolePreference === b.rolePreference ? 0 : 1;
 }
 
+// premium 쪽 prefs ↔ 상대 실제 태그/역할 점수.
+// 한쪽만 premium이어도 그 쪽 힌트를 씀 (후자 설계). 둘 다면 양방향 평균.
+function premiumPrefsSynergy(a: MatchProfile, b: MatchProfile): number | null {
+  const scores: number[] = [];
+
+  if (a.plan === "premium" && a.matchPrefs) {
+    scores.push(
+      scorePrefsAgainstPartner(a.matchPrefs, {
+        rolePreference: b.rolePreference,
+        playstyleTags: b.playstyleTags,
+        aggressionScore: b.aggressionScore,
+      }),
+    );
+  }
+
+  if (b.plan === "premium" && b.matchPrefs) {
+    scores.push(
+      scorePrefsAgainstPartner(b.matchPrefs, {
+        rolePreference: a.rolePreference,
+        playstyleTags: a.playstyleTags,
+        aggressionScore: a.aggressionScore,
+      }),
+    );
+  }
+
+  if (scores.length === 0) {
+    return null;
+  }
+
+  return scores.reduce((x, y) => x + y, 0) / scores.length;
+}
+
 // 두 유저의 플레이스타일 궁합 점수 (0~1). 순수 함수 — 테스트 대상.
 export function calculateSynergyScore(a: MatchProfile, b: MatchProfile): number {
   const aggression = aggressionSynergy(a, b);
   const role = roleSynergy(a, b);
+  const base = WEIGHT_AGGRESSION * aggression + WEIGHT_ROLE * role;
 
-  return WEIGHT_AGGRESSION * aggression + WEIGHT_ROLE * role;
+  const prefsScore = premiumPrefsSynergy(a, b);
+  if (prefsScore == null) {
+    // free↔free 또는 prefs 없음 → 기존과 동일
+    return base;
+  }
+
+  return WEIGHT_BASE_WITH_PREFS * base + WEIGHT_PREFS * prefsScore;
 }
 
 // ─── 시간 기반 완화 ──────────────────────────────────────

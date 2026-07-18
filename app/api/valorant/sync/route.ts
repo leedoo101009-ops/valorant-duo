@@ -62,13 +62,19 @@ async function refreshProfileTier(
   userId: string,
   puuid: string,
   shard: string | null | undefined,
+  fallbackRiotTier?: number | null,
 ) {
   if (!shard) {
-    return null;
+    return { tier: null as number | null, rankedRating: null as number | null };
   }
 
-  const { tier } = await syncProfileTier(admin, userId, puuid, shard);
-  return tier;
+  // 전적 불러오기 때는 티어/RR을 강제로 다시 긁음 (프로필에 안 뜨는 문제 방지)
+  // competitiveupdates가 비면 전적 상세 competitiveTier 로 폴백
+  const { tier, rankedRating } = await syncProfileTier(admin, userId, puuid, shard, {
+    force: true,
+    fallbackRiotTier,
+  });
+  return { tier, rankedRating };
 }
 
 async function resolveRiotPuuid(
@@ -213,25 +219,28 @@ export async function POST(request: Request) {
     }
   }
 
-  const { puuid: riotPuuid, errorKey: resolveError } = await resolveRiotPuuid(
+  const { puuid: resolvedPuuid, errorKey: resolveError } = await resolveRiotPuuid(
     admin,
     user.id,
     profile.riot_id,
     profile.riot_puuid,
   );
 
-  if (!riotPuuid) {
+  if (!resolvedPuuid) {
     return Response.json(
       { ok: false, errorKey: resolveError ?? "riot_required" },
       { status: resolveError === "riot_already_linked" ? 409 : 400 },
     );
   }
 
+  let riotPuuid = resolvedPuuid;
+
   let {
     matches,
     fetched,
     skipped,
     shard,
+    inferredRiotTier,
     errorKey,
     status: riotStatus,
   } = await collectRecentValorantMatches(riotPuuid);
@@ -257,11 +266,13 @@ export async function POST(request: Request) {
       );
     }
 
+    riotPuuid = freshPuuid;
     const retry = await collectRecentValorantMatches(freshPuuid);
     matches = retry.matches;
     fetched = retry.fetched;
     skipped = retry.skipped;
     shard = retry.shard;
+    inferredRiotTier = retry.inferredRiotTier;
     errorKey = retry.errorKey;
     riotStatus = retry.status;
   }
@@ -285,9 +296,15 @@ export async function POST(request: Request) {
     const lastMatchSyncAt = await recordMatchSyncAttempt(admin, user.id);
     const savedMatches = await fetchSavedMatches(admin, user.id);
     const savedShard = await saveValorantShard(admin, user.id, shard);
-    const tier = savedShard
-      ? await refreshProfileTier(admin, user.id, riotPuuid, savedShard)
-      : null;
+    const rank = savedShard
+      ? await refreshProfileTier(
+          admin,
+          user.id,
+          riotPuuid,
+          savedShard,
+          inferredRiotTier,
+        )
+      : { tier: null, rankedRating: null };
 
     if (errorKey === "rate_limit") {
       return Response.json({
@@ -300,7 +317,8 @@ export async function POST(request: Request) {
         matches: savedMatches,
         lastMatchSyncAt,
         shard: savedShard,
-        tier,
+        tier: rank.tier,
+        rankedRating: rank.rankedRating,
         warningKey: "rate_limit",
         cooldownSec: Math.ceil(SYNC_COOLDOWN_MS / 1000),
       });
@@ -315,7 +333,8 @@ export async function POST(request: Request) {
       matches: savedMatches,
       lastMatchSyncAt,
       shard: savedShard,
-      tier,
+      tier: rank.tier,
+      rankedRating: rank.rankedRating,
       cooldownSec: Math.ceil(SYNC_COOLDOWN_MS / 1000),
     });
   }
@@ -333,9 +352,15 @@ export async function POST(request: Request) {
 
   const lastMatchSyncAt = await recordMatchSyncAttempt(admin, user.id);
   const savedShard = await saveValorantShard(admin, user.id, shard);
-  const tier = savedShard
-    ? await refreshProfileTier(admin, user.id, riotPuuid, savedShard)
-    : null;
+  const rank = savedShard
+    ? await refreshProfileTier(
+        admin,
+        user.id,
+        riotPuuid,
+        savedShard,
+        inferredRiotTier,
+      )
+    : { tier: null, rankedRating: null };
 
   return Response.json({
     ok: true,
@@ -346,6 +371,7 @@ export async function POST(request: Request) {
     matches: await fetchSavedMatches(admin, user.id),
     lastMatchSyncAt,
     shard: savedShard,
-    tier,
+    tier: rank.tier,
+    rankedRating: rank.rankedRating,
   });
 }

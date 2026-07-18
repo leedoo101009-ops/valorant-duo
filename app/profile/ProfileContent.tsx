@@ -10,6 +10,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { GRADE_STYLES } from "@/lib/reputation/scoring";
 import type { ReviewTagStat, UserReputation } from "@/lib/reputation/types";
 import { getQueueLabel } from "@/lib/riot/agents";
+import { formatValorantTierLabel } from "@/lib/riot/tierLabels";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/supabase/profile";
 import type { ValorantMatch } from "@/lib/supabase/valorant";
@@ -181,6 +182,8 @@ function ProfileContentInner({
       errorKey?: string;
       message?: string;
       riot_id?: string;
+      tier?: number | null;
+      rankedRating?: number | null;
     };
 
     if (!response.ok || !data.ok) {
@@ -194,7 +197,12 @@ function ProfileContentInner({
 
     // setState는 비동기라 바로 아래 runMatchSync에서 profile.riot_id가 아직 예전 값일 수 있음
     const linkedRiotId = data.riot_id ?? profile.riot_id;
-    setProfile((prev) => ({ ...prev, riot_id: linkedRiotId }));
+    setProfile((prev) => ({
+      ...prev,
+      riot_id: linkedRiotId,
+      tier: data.tier ?? prev.tier ?? null,
+      ranked_rating: data.rankedRating ?? prev.ranked_rating ?? null,
+    }));
     setRiotIdInput("");
     setLinkingRiot(false);
     setMessage(t.profile.syncAfterLink);
@@ -230,6 +238,8 @@ function ProfileContentInner({
       total?: number;
       matches?: ValorantMatch[];
       lastMatchSyncAt?: string;
+      tier?: number | null;
+      rankedRating?: number | null;
     };
 
     if (!response.ok || !data.ok) {
@@ -251,9 +261,13 @@ function ProfileContentInner({
       setMatches(data.matches);
     }
 
-    if (data.lastMatchSyncAt) {
-      setProfile((prev) => ({ ...prev, last_match_sync_at: data.lastMatchSyncAt ?? null }));
-    }
+    setProfile((prev) => ({
+      ...prev,
+      last_match_sync_at: data.lastMatchSyncAt ?? prev.last_match_sync_at ?? null,
+      tier: data.tier !== undefined ? data.tier : prev.tier,
+      ranked_rating:
+        data.rankedRating !== undefined ? data.rankedRating : prev.ranked_rating,
+    }));
 
     if ((data.total ?? 0) === 0) {
       setMessage(t.profile.syncEmpty);
@@ -300,7 +314,12 @@ function ProfileContentInner({
       return;
     }
 
-    setProfile((prev) => ({ ...prev, riot_id: null }));
+    setProfile((prev) => ({
+      ...prev,
+      riot_id: null,
+      tier: null,
+      ranked_rating: null,
+    }));
     setMessage(t.profile.unlinkRiotSuccess);
     setUnlinkingRiot(false);
     router.refresh();
@@ -388,6 +407,39 @@ function ProfileContentInner({
                   ) : null}
                 </dd>
               </div>
+              {profile.riot_id ? (
+                <div className="space-y-2">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <dt className="font-display text-[10px] tracking-widest text-[#555]">
+                        {t.profile.valorantTier}
+                      </dt>
+                      <dd className="mt-1 font-display text-lg font-bold tracking-wide text-white">
+                        {formatValorantTierLabel(profile.tier, locale) ?? (
+                          <span className="text-sm font-normal text-[#555]">
+                            {t.profile.tierUnknown}
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-display text-[10px] tracking-widest text-[#555]">
+                        {t.profile.rankedRating}
+                      </dt>
+                      <dd className="mt-1 font-display text-lg font-bold tracking-wide text-white">
+                        {profile.ranked_rating != null ? (
+                          <>
+                            {profile.ranked_rating}
+                            <span className="ml-1 text-sm font-normal text-[#888]">RR</span>
+                          </>
+                        ) : (
+                          <span className="text-sm font-normal text-[#555]">—</span>
+                        )}
+                      </dd>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <dt className="font-display text-[10px] tracking-widest text-[#555]">
                   {t.profile.discordAccount}

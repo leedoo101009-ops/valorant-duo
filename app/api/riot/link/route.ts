@@ -104,7 +104,7 @@ export async function POST(request: Request) {
 
   const { data: tierProfile } = await admin
     .from("profiles")
-    .select("tier")
+    .select("tier, ranked_rating")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -113,5 +113,6 @@ export async function POST(request: Request) {
     riot_id: riotId,
     valorant_shard: shard,
     tier: tierProfile?.tier ?? null,
+    rankedRating: tierProfile?.ranked_rating ?? null,
   });
 }

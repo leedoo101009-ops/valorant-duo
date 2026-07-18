@@ -14,6 +14,10 @@ export type Profile = {
   last_seen_at?: string | null;
   trust_score?: number | null;
   review_count?: number | null;
+  /** Valorant 랭크 인덱스 0~26 (Iron1=0 … Radiant=26) */
+  tier?: number | null;
+  /** Valorant 경쟁전 RR */
+  ranked_rating?: number | null;
   created_at: string;
   updated_at: string;
 };

@@ -1,13 +1,18 @@
-// 플레이스타일 재분석 스케줄러
+// 플레이스타일 재분석 — lazy refresh (큐 진입 시점 조건부 실행)
 //
 // 언제 쓰나?
-//   - 유저가 매칭 큐에 들어올 때 (큐 join API에서 호출)
-//   - 또는 크론잡에서 온라인 유저를 돌면서 호출
+//   - 유저가 매칭 큐에 들어갈 때 handleQueuePost → refreshAnalysisIfDue
+//   - 크론/일괄 배치로 전체 유저를 도는 방식은 쓰지 않음
 //
-// 규칙:
-//   - free    : 7일(주 1회) 지났으면 규칙기반 재분석 (LLM 없음)
-//   - premium : 3일 지났으면 규칙기반 + Claude 정성 재분석
+// 규칙 (텀 계산은 여기만 — 호출부에서 바꾸지 말 것):
+//   - free    : 큐 입장마다 규칙기반 재계산 (LLM 없음 · 캐시 주기 없음)
+//   - premium : 3일마다 규칙기반 + Claude 노트/match_prefs 재분석
 //   - last_analyzed_at이 null(최초 가입)이면 즉시 1회 분석
+//
+// 왜 free는 매번인가?
+//   규칙 분석은 서버 계산만이라 비용이 거의 없음.
+//   전적이 바뀌면 바로 태그/점수가 반영되는 편이 자연스러움.
+//   Claude(유료)만 API 비용이 있어서 3일 텀을 둠.
 //
 // 설계:
 //   shouldReanalyze — 순수 함수. DB/네트워크 없이 입력만으로 판단 → 테스트 쉬움
@@ -18,9 +23,9 @@ import { executePlanAnalysis } from "@/lib/analysis/executePlanAnalysis";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// 플랜별 재분석 주기
+// premium만 주기 사용. free는 shouldReanalyze에서 항상 true.
 export const REANALYZE_INTERVAL_MS = {
-  free: 7 * DAY_MS,
+  free: 0,
   premium: 3 * DAY_MS,
 } as const;
 
@@ -52,6 +57,11 @@ export function shouldReanalyze(
   user: Pick<SchedulerUser, "plan" | "last_analyzed_at">,
   now: number = Date.now(),
 ): boolean {
+  // free = 규칙만 → 큐 들어갈 때마다 최신 전적으로 다시 계산
+  if (user.plan === "free") {
+    return true;
+  }
+
   // 최초 가입(분석 이력 없음) → 즉시 1회 분석
   if (!user.last_analyzed_at) {
     return true;
@@ -64,7 +74,8 @@ export function shouldReanalyze(
     return true;
   }
 
-  const interval = REANALYZE_INTERVAL_MS[user.plan];
+  // premium만 3일 텀
+  const interval = REANALYZE_INTERVAL_MS.premium;
   return now - lastAnalyzed >= interval;
 }
 

@@ -9,6 +9,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { findBestMatch, type MatchProfile } from "@/lib/matching/matcher";
+import { sanitizeMatchPrefs } from "@/lib/matching/matchPrefs";
+import { normalizePlan } from "@/lib/analysis/scheduler";
 
 // get_match_queue_candidates RPC가 돌려주는 행 형태
 type CandidateRow = {
@@ -18,6 +20,9 @@ type CandidateRow = {
   aggression_score: number | null;
   role_preference: string | null;
   seconds_since_last_seen: number;
+  plan: string | null;
+  playstyle_tags: unknown;
+  match_prefs: unknown;
 };
 
 export type SmartMatchResult = {
@@ -27,13 +32,26 @@ export type SmartMatchResult = {
   synergyScore: number | null;
 };
 
+function parsePlaystyleTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((t): t is string => typeof t === "string");
+}
+
 function toMatchProfile(row: CandidateRow): MatchProfile {
+  const plan = normalizePlan(row.plan);
+  // free는 prefs를 쓰지 않음. premium이어도 sanitize 실패면 null → 기본 궁합만.
+  const matchPrefs =
+    plan === "premium" ? sanitizeMatchPrefs(row.match_prefs) : null;
+
   return {
     id: row.user_id,
     tier: row.tier,
     aggressionScore: row.aggression_score,
     rolePreference: row.role_preference,
     secondsSinceLastSeen: row.seconds_since_last_seen,
+    plan,
+    playstyleTags: parsePlaystyleTags(row.playstyle_tags),
+    matchPrefs,
   };
 }
 

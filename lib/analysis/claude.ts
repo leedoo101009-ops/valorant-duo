@@ -4,31 +4,33 @@ import "server-only";
 //
 // 설계:
 //   정량(aggression_score, tags, role)은 ruleBasedAnalyzer가 계산한 결과를 그대로 사용.
-//   Claude는 아래 4축만 생성합니다.
+//   Claude는 아래를 생성합니다.
 //     1) trend_summary      — 최근 폼/패턴 변화
 //     2) situational_notes  — 맵별 조건부 성향 (사이드 데이터는 보류 → 맵만)
 //     3) anomaly_notes      — 지표 간 모순·특이점
-//     4) synergy_notes      — 파트너 궁합·시나리오 전술
+//     4) synergy_notes      — 파트너 궁합·시나리오 전술 (사람 읽는 용)
+//     5) match_prefs        — 매칭 엔진이 쓰는 구조화 힌트 (역할/태그/공격성)
 //
-// 토큰 통제:
-//   결과가 짧고 구조화된 JSON이면 충분 — 토큰 = 요금이므로 낭비 방지.
-//   필드가 4개로 늘어 MAX_TOKENS를 500 → 2000으로 재산정.
-//   (필드당 2~3문장 × 4 ≈ 출력 ~400~800, 여유 포함 상한 2000)
+// 왜 match_prefs가 중요한가?
+//   synergy_notes 문장만으로는 점수를 못 매깁니다.
+//   preferred_roles 같은 고정 값이 있어야 "더 잘 맞는 후보"를 고를 수 있습니다.
 //
-// 예상 토큰 (대략):
-//   입력 system+user  ~800~1,200
-//   출력 실제         ~400~800
-//   1회 총합          ~1,200~2,000 (이전 정량+정성 혼합보다 출력만 늘림)
+// 토큰 통제: 짧은 JSON — 토큰 = 요금.
 
 import type { RuleBasedAnalysis } from "@/lib/analysis/ruleBasedAnalyzer";
+import {
+  buildFallbackMatchPrefs,
+  MATCH_PREF_TAGS,
+  sanitizeMatchPrefs,
+  type MatchPrefs,
+} from "@/lib/matching/matchPrefs";
 
 const CLAUDE_MODEL = "claude-sonnet-4-6";
 const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
-// 필드 4개 × 2~3문장 + JSON 래퍼 여유.
-// 500은 한 필드만 길게 써도 잘릴 수 있어 2000으로 상향.
-const MAX_TOKENS = 2000;
+// 4축 노트 + match_prefs 여유
+const MAX_TOKENS = 2200;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 // 필드별 글자 상한 (sanitize + 프롬프트 양쪽에서 강제)
@@ -41,7 +43,10 @@ export type QualitativeNotes = {
   synergy_notes: string;
 };
 
-export type ClaudePlaystyleAnalysis = RuleBasedAnalysis & QualitativeNotes;
+export type ClaudePlaystyleAnalysis = RuleBasedAnalysis &
+  QualitativeNotes & {
+    match_prefs: MatchPrefs;
+  };
 
 function buildFallbackNotes(rule: RuleBasedAnalysis): QualitativeNotes {
   const topMap = rule.mapSummaries[0]?.map ?? "주요 맵";
@@ -60,13 +65,19 @@ const SYSTEM_PROMPT = [
   "출력 규칙:",
   "- 응답은 오직 하나의 JSON 객체만. 인사·설명·마크다운 코드블록 금지.",
   "- 첫 글자는 { 이고 마지막 글자는 }.",
-  '- 형식: {"trend_summary":"...","situational_notes":"...","anomaly_notes":"...","synergy_notes":"..."}',
+  '- 형식: {"trend_summary":"...","situational_notes":"...","anomaly_notes":"...","synergy_notes":"...","match_prefs":{"preferred_roles":["controller"],"preferred_tags":["신중형"],"avoid_tags":["엔트리프래거"],"preferred_aggression":"low"}}',
   "",
-  "필드 규칙 (각 필드는 한국어 2~3문장, 180자 이내, 불필요한 수식어 금지):",
-  "- trend_summary: 최근 폼/패턴 변화 (예: 승률·KDA 흐름, 공격성 변화)",
-  "- situational_notes: 맵별 승률·KDA 차이로 본 조건부 성향 (사이드 데이터 없음 — 맵만)",
-  "- anomaly_notes: 지표 간 모순·특이점 (예: 공격성 높은데 승률 낮음)",
-  "- synergy_notes: 어떤 성향 파트너와 잘 맞는지 + 한 줄 전술 시나리오",
+  "노트 필드 (각 한국어 2~3문장, 180자 이내):",
+  "- trend_summary: 최근 폼/패턴 변화",
+  "- situational_notes: 맵별 승률·KDA 차이로 본 조건부 성향 (사이드 없음)",
+  "- anomaly_notes: 지표 간 모순·특이점",
+  "- synergy_notes: 어떤 성향 파트너와 잘 맞는지 + 한 줄 전술",
+  "",
+  "match_prefs (매칭 엔진용, 배열 각 최대 3개):",
+  '- preferred_roles: "duelist"|"initiator"|"controller"|"sentinel"|"flex" 만',
+  `- preferred_tags / avoid_tags: 다음만 사용 → ${MATCH_PREF_TAGS.join(", ")}`,
+  '- preferred_aggression: "low"|"mid"|"high"|null (원하는 파트너 공격성)',
+  "- 본인과 상호보완되는 파트너를 고를 것 (둘 다 엔트리면 avoid 등)",
 ].join("\n");
 
 function buildUserPrompt(rule: RuleBasedAnalysis): string {
@@ -126,6 +137,25 @@ function sanitizeNotes(raw: unknown): QualitativeNotes | null {
   return out as QualitativeNotes;
 }
 
+function notesAndPrefsFromParsed(
+  parsed: unknown,
+  rule: RuleBasedAnalysis,
+): Pick<ClaudePlaystyleAnalysis, keyof QualitativeNotes | "match_prefs"> {
+  const notes = sanitizeNotes(parsed);
+  const data =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  // Claude prefs가 깨져도 fallback으로 premium 차별화는 유지
+  const prefs =
+    sanitizeMatchPrefs(data?.match_prefs) ?? buildFallbackMatchPrefs(rule);
+
+  return {
+    ...(notes ?? buildFallbackNotes(rule)),
+    match_prefs: prefs,
+  };
+}
+
 function extractJsonText(text: string): string {
   const trimmed = text.trim();
   if (trimmed.startsWith("{")) {
@@ -141,11 +171,15 @@ function extractJsonText(text: string): string {
   return trimmed;
 }
 
-// 규칙기반 정량 + Claude 정성. 실패 시 정량은 유지하고 정성만 더미.
+// 규칙기반 정량 + Claude 정성. 실패 시 정량은 유지하고 정성/prefs는 fallback.
 export async function analyzePlaystyleWithClaude(
   rule: RuleBasedAnalysis,
 ): Promise<ClaudePlaystyleAnalysis> {
-  const fallback = { ...rule, ...buildFallbackNotes(rule) };
+  const fallback: ClaudePlaystyleAnalysis = {
+    ...rule,
+    ...buildFallbackNotes(rule),
+    match_prefs: buildFallbackMatchPrefs(rule),
+  };
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -208,13 +242,13 @@ export async function analyzePlaystyleWithClaude(
       return fallback;
     }
 
-    const notes = sanitizeNotes(parsed);
-    if (!notes) {
-      console.warn("[claude] Claude API 미사용 - 더미 노트 반환 (응답 검증 실패)");
-      return fallback;
+    // 노트 검증 실패해도 prefs fallback으로 premium 매칭 차별은 유지
+    const qualitative = notesAndPrefsFromParsed(parsed, rule);
+    if (!sanitizeNotes(parsed)) {
+      console.warn("[claude] 노트 검증 실패 — fallback 노트 + prefs 사용");
     }
 
-    return { ...rule, ...notes };
+    return { ...rule, ...qualitative };
   } catch (error) {
     console.warn(
       "[claude] Claude API 미사용 - 더미 노트 반환:",

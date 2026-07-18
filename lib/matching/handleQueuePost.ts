@@ -2,9 +2,10 @@
 //
 // 흐름:
 //   1) 인증 + rate limit + 온라인 갱신
-//   2) join_match_queue RPC (큐 등록)
-//   3) get_match_queue_candidates → findBestMatch → create_duo_match (동시성 안전)
-//   4) 매칭 성공 → 매치/상대 정보 반환 | 실패 → 대기 상태 반환
+//   2) lazy refresh — 재분석 텀이면 분석 완료 후 큐 입장 (실패 시 캐시로 계속)
+//   3) join_match_queue RPC (큐 등록)
+//   4) get_match_queue_candidates → findBestMatch → create_duo_match (동시성 안전)
+//   5) 매칭 성공 → 매치/상대 정보 반환 | 실패 → 대기 상태 반환
 //
 // 기존 /api/match/queue/join 도 이 핸들러를 재사용합니다 (경로만 다름).
 
@@ -219,33 +220,48 @@ async function buildPartnerMatchPayload(
   };
 }
 
-function scheduleBackgroundAnalysis(
+// lazy refresh: 큐 입장 직전에만 재분석 (cron 일괄 순회 없음)
+//   - free: 입장마다 규칙기반 재계산 / premium: 3일마다 Claude까지
+//   - 실패해도 기존 캐시(tags/score/notes)로 매칭 계속
+async function refreshAnalysisIfDue(
   admin: ReturnType<typeof createAdminClient>,
   userId: string,
-) {
-  void (async () => {
-    try {
-      const { data: analysisProfile } = await admin
-        .from("profiles")
-        .select("plan, last_analyzed_at")
-        .eq("id", userId)
-        .maybeSingle();
+): Promise<void> {
+  try {
+    const { data: analysisProfile } = await admin
+      .from("profiles")
+      .select("plan, last_analyzed_at")
+      .eq("id", userId)
+      .maybeSingle();
 
-      if (!analysisProfile) return;
+    if (!analysisProfile) return;
 
-      const schedulerUser: SchedulerUser = {
-        id: userId,
-        plan: normalizePlan(analysisProfile.plan as string | null),
-        last_analyzed_at: analysisProfile.last_analyzed_at as string | null,
-      };
+    const schedulerUser: SchedulerUser = {
+      id: userId,
+      plan: normalizePlan(analysisProfile.plan as string | null),
+      last_analyzed_at: analysisProfile.last_analyzed_at as string | null,
+    };
 
-      if (shouldReanalyze(schedulerUser)) {
-        await runAnalysis(schedulerUser, admin);
-      }
-    } catch {
-      // 분석 실패는 큐/매칭에 영향 없음
+    // 텀 안 지났으면 캐시된 분석 결과 그대로 사용
+    if (!shouldReanalyze(schedulerUser)) {
+      return;
     }
-  })();
+
+    const result = await runAnalysis(schedulerUser, admin);
+    if (!result.analyzed) {
+      // not_enough_matches / save_failed 등 — 매칭은 이어서 진행
+      console.warn(
+        "[queue] lazy analysis not applied:",
+        result.reason ?? "unknown",
+        userId,
+      );
+    }
+  } catch (error) {
+    console.warn(
+      "[queue] lazy analysis error — matching continues with cached profile:",
+      error instanceof Error ? error.message : "unknown",
+    );
+  }
 }
 
 export async function handleQueuePost(request: Request): Promise<Response> {
@@ -302,6 +318,9 @@ export async function handleQueuePost(request: Request): Promise<Response> {
     // 티어 동기화 실패해도 큐 입장은 허용 (언랭 유저 등)
   }
 
+  // 큐 등록·매칭 전에 분석 갱신 (필요 시만). 실패해도 join은 계속.
+  await refreshAnalysisIfDue(admin, user.id);
+
   const { error: joinError } = await admin.rpc("join_match_queue", {
     p_user_id: user.id,
   });
@@ -325,8 +344,6 @@ export async function handleQueuePost(request: Request): Promise<Response> {
   } catch {
     // 매칭 계산 실패해도 큐 등록은 유지
   }
-
-  scheduleBackgroundAnalysis(admin, user.id);
 
   const { data: queueCount } = await supabase.rpc("count_queue_users");
   const count = typeof queueCount === "number" ? queueCount : 0;
