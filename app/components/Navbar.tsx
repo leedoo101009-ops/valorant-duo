@@ -3,25 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
 import { useLanguage } from "../context/LanguageContext";
-import { createClient } from "@/lib/supabase/client";
-import { ensureProfile } from "@/lib/supabase/profile";
+import { useAuth } from "@/lib/auth/useAuth";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 export default function Navbar() {
   const { t } = useLanguage();
   const router = useRouter();
+  const { user, authReady, signOut } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
-
-  const links = [
-    { label: t.nav.features, href: "#features" },
-    { label: t.nav.system, href: "#system" },
-    { label: t.nav.dashboard, href: "#dashboard" },
-  ];
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -29,26 +20,8 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setAuthReady(true);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
   async function handleLogout() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    await signOut();
     setOpen(false);
     router.push("/");
     router.refresh();
@@ -58,108 +31,97 @@ export default function Navbar() {
 
   return (
     <header
-      className={`fixed top-0 right-0 left-0 z-50 transition-colors duration-300 ${
-        scrolled ? "border-b border-[#222] bg-black" : "bg-transparent"
+      className={`fixed top-0 right-0 left-0 z-50 transition-[background-color,border-color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+        scrolled
+          ? "border-b border-white/10 bg-[#05080b]/85 backdrop-blur-md"
+          : "border-b border-transparent bg-transparent"
       }`}
     >
-      <nav className="mx-auto flex h-20 max-w-[1400px] items-center justify-between px-6 lg:px-12">
-        <Link href="/" className="flex items-center gap-4">
-          <div className="flex h-10 w-10 items-center justify-center border border-[#333] bg-[#111]">
-            <span className="font-display text-lg font-bold tracking-widest">D</span>
-          </div>
-          <span className="font-display text-2xl font-bold tracking-[0.2em]">DUO</span>
+      <nav className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-6 md:h-20 lg:px-12">
+        <Link href="/" className="flex items-center gap-2.5">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#FF4655] font-headline text-sm font-black text-white">
+            D
+          </span>
+          <span className="font-headline text-xl font-extrabold tracking-tight text-white md:text-2xl">
+            Duorant
+          </span>
         </Link>
 
-        <div className="hidden items-center gap-10 md:flex">
-          {links.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              className="font-display text-xs font-semibold tracking-[0.2em] text-[#888] transition-colors hover:text-white"
-            >
-              {link.label}
-            </a>
-          ))}
-        </div>
-
-        <div className="hidden items-center gap-4 md:flex">
+        <div className="hidden items-center gap-5 md:flex">
           <LanguageSwitcher />
           {authReady && user ? (
             <>
               <Link
                 href="/profile"
-                className="max-w-[120px] truncate font-display text-xs tracking-widest text-[#888] transition-colors hover:text-white"
+                className="max-w-[120px] truncate font-body text-sm font-medium text-white/90 transition-colors duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-white"
               >
                 {emailLabel}
               </Link>
-              <button type="button" onClick={handleLogout} className="btn-outline !px-6 !py-3 !text-xs">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 font-body text-sm font-semibold text-white transition-[border-color,background] duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-[#3DE0D0] hover:bg-white/10"
+              >
                 {t.nav.logout}
               </button>
             </>
           ) : (
-            <>
-              <Link href="/login" className="btn-outline !px-6 !py-3 !text-xs">
-                {t.nav.login}
-              </Link>
-              <Link href="/login?mode=signup" className="btn-accent !px-6 !py-3 !text-xs">
-                {t.nav.start}
-              </Link>
-            </>
+            <Link
+              href="/login"
+              className="rounded-full bg-[#FF4655] px-5 py-2.5 font-body text-sm font-semibold text-white shadow-[0_8px_24px_rgba(255,70,85,0.35)] transition-[filter,transform] duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-[1.02] hover:brightness-110"
+            >
+              {t.nav.login}
+            </Link>
           )}
         </div>
 
         <button
           type="button"
-          className="flex h-10 w-10 flex-col items-center justify-center gap-1.5 border border-[#333] md:hidden"
+          className="flex h-10 w-10 flex-col items-center justify-center gap-1.5 rounded-lg border border-white/20 md:hidden"
           onClick={() => setOpen(!open)}
           aria-label={t.nav.menu}
         >
-          <span className={`block h-px w-5 bg-white transition-transform ${open ? "translate-y-[7px] rotate-45" : ""}`} />
-          <span className={`block h-px w-5 bg-white transition-opacity ${open ? "opacity-0" : ""}`} />
-          <span className={`block h-px w-5 bg-white transition-transform ${open ? "-translate-y-[7px] -rotate-45" : ""}`} />
+          <span
+            className={`block h-px w-5 bg-white transition-transform duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${open ? "translate-y-[7px] rotate-45" : ""}`}
+          />
+          <span
+            className={`block h-px w-5 bg-white transition-opacity duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${open ? "opacity-0" : ""}`}
+          />
+          <span
+            className={`block h-px w-5 bg-white transition-transform duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${open ? "-translate-y-[7px] -rotate-45" : ""}`}
+          />
         </button>
       </nav>
 
       {open && (
-        <div className="border-t border-[#222] bg-black px-6 py-6 md:hidden">
-          {links.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              className="block py-4 font-display text-sm tracking-[0.15em] text-[#888] hover:text-white"
-              onClick={() => setOpen(false)}
-            >
-              {link.label}
-            </a>
-          ))}
-          <div className="mt-4 flex flex-col gap-3 border-t border-[#222] pt-6">
+        <div className="border-t border-white/10 bg-[#05080b]/95 px-6 py-6 backdrop-blur-md md:hidden">
+          <div className="flex flex-col gap-3">
             <LanguageSwitcher />
             {authReady && user ? (
               <>
                 <Link
                   href="/profile"
-                  className="font-display text-xs tracking-widest text-[#888] hover:text-white"
+                  className="font-body text-sm font-medium text-white"
                   onClick={() => setOpen(false)}
                 >
                   {t.nav.profile}: {user.email}
                 </Link>
-                <button type="button" onClick={handleLogout} className="btn-outline w-full !text-xs">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="rounded-full border border-white/20 px-5 py-3 font-body text-sm font-semibold text-white"
+                >
                   {t.nav.logout}
                 </button>
               </>
             ) : (
-              <>
-                <Link href="/login" className="btn-outline w-full !text-xs text-center" onClick={() => setOpen(false)}>
-                  {t.nav.login}
-                </Link>
-                <Link
-                  href="/login?mode=signup"
-                  className="btn-accent w-full !text-xs text-center"
-                  onClick={() => setOpen(false)}
-                >
-                  {t.nav.start}
-                </Link>
-              </>
+              <Link
+                href="/login"
+                className="rounded-full bg-[#FF4655] px-5 py-3 text-center font-body text-sm font-semibold text-white"
+                onClick={() => setOpen(false)}
+              >
+                {t.nav.login}
+              </Link>
             )}
           </div>
         </div>

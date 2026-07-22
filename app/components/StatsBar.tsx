@@ -3,39 +3,55 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "../context/LanguageContext";
 import { useOnlineCount } from "../hooks/useOnlineCount";
-import ScrollReveal from "./ScrollReveal";
 
 function AnimatedNumber({
   value,
   prefix,
   suffix,
   active,
+  durationMs,
 }: {
   value: number;
   prefix: string;
   suffix: string;
   active: boolean;
+  durationMs: number;
 }) {
   const [display, setDisplay] = useState(0);
+  const prefersReduced = useRef(false);
+
+  useEffect(() => {
+    prefersReduced.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
 
   useEffect(() => {
     if (!active) return;
 
-    const duration = 1200;
+    // 접근성: 모션 줄이기면 즉시 최종값
+    if (prefersReduced.current) {
+      setDisplay(value);
+      return;
+    }
+
     const start = performance.now();
+    let frame = 0;
 
     const tick = (now: number) => {
-      const progress = Math.min((now - start) / duration, 1);
+      const progress = Math.min((now - start) / durationMs, 1);
+      // ease-out cubic — bounce/spring 없음
       const eased = 1 - Math.pow(1 - progress, 3);
       setDisplay(Math.round(value * eased));
-      if (progress < 1) requestAnimationFrame(tick);
+      if (progress < 1) {
+        frame = requestAnimationFrame(tick);
+      }
     };
 
-    requestAnimationFrame(tick);
-  }, [active, value]);
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [active, value, durationMs]);
 
   return (
-    <span>
+    <span className="font-mono">
       {prefix}
       {display}
       {suffix}
@@ -51,10 +67,27 @@ export default function StatsBar() {
 
   const stats = useMemo(
     () => [
-      { value: 30, suffix: "s", prefix: "<", label: t.stats.avgMatch },
-      { value: onlineCount, suffix: "", prefix: "", label: t.stats.onlineNow },
-      { value: 94, suffix: "%", prefix: "", label: t.stats.compatRate },
-      { value: 24, suffix: "/7", prefix: "", label: t.stats.liveEngine },
+      {
+        value: 30,
+        suffix: "s",
+        prefix: "<",
+        label: t.stats.avgMatch,
+        durationMs: 1100,
+      },
+      {
+        value: Math.max(onlineCount, 0),
+        suffix: "+",
+        prefix: "",
+        label: t.stats.onlineNow,
+        durationMs: 1350,
+      },
+      {
+        value: 94,
+        suffix: "%",
+        prefix: "",
+        label: t.stats.compatRate,
+        durationMs: 1500,
+      },
     ],
     [onlineCount, t.stats],
   );
@@ -63,6 +96,7 @@ export default function StatsBar() {
     const el = ref.current;
     if (!el) return;
 
+    // IntersectionObserver — 스크롤 인뷰 시 한 번만 카운트업
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -70,7 +104,7 @@ export default function StatsBar() {
           observer.unobserve(el);
         }
       },
-      { threshold: 0.3 },
+      { threshold: 0.35 },
     );
 
     observer.observe(el);
@@ -78,34 +112,36 @@ export default function StatsBar() {
   }, []);
 
   return (
-    <section className="border-t border-[#222] bg-[#0a0a0a] py-24 lg:py-32">
-      <div ref={ref} className="mx-auto max-w-[1400px] px-6 lg:px-12">
-        <ScrollReveal>
-          <div className="grid grid-cols-2 gap-px bg-[#222] lg:grid-cols-4">
-            {stats.map((stat, i) => (
-              <div
-                key={stat.label}
-                className="group bg-[#111] p-8 transition-colors hover:bg-[#161616] lg:p-12"
-              >
-                <p className="font-display text-[clamp(2.5rem,6vw,4rem)] font-bold leading-none text-[#ff4655]">
-                  <AnimatedNumber
-                    value={stat.value}
-                    prefix={stat.prefix}
-                    suffix={stat.suffix}
-                    active={active}
-                  />
-                </p>
-                <p className="mt-4 font-display text-xs tracking-[0.2em] text-[#555] transition-colors group-hover:text-[#888]">
-                  {stat.label}
-                </p>
-                <div
-                  className="mt-6 h-px w-8 bg-[#333] transition-all group-hover:w-16 group-hover:bg-[#ff4655]"
-                  style={{ transitionDelay: `${i * 50}ms` }}
+    <section className="w-full bg-black py-20 md:py-28">
+      <div ref={ref} className="mx-auto max-w-[1100px] px-6 lg:px-12">
+        <h2 className="font-headline text-center text-2xl font-extrabold tracking-tight text-white md:text-[2rem]">
+          {t.stats.sectionTitle}
+        </h2>
+
+        <div className="mt-12 flex flex-col gap-10 md:mt-16 md:flex-row md:items-start md:justify-between md:gap-6">
+          {stats.map((stat, i) => (
+            <div
+              key={stat.label}
+              className="flex flex-1 flex-col items-center text-center"
+              style={{
+                transitionDelay: active ? `${i * 90}ms` : "0ms",
+              }}
+            >
+              <p className="font-mono text-[clamp(2.75rem,6vw,3.75rem)] font-bold leading-none text-white">
+                <AnimatedNumber
+                  value={stat.value}
+                  prefix={stat.prefix}
+                  suffix={stat.suffix}
+                  active={active}
+                  durationMs={stat.durationMs}
                 />
-              </div>
-            ))}
-          </div>
-        </ScrollReveal>
+              </p>
+              <p className="mt-3 font-body text-sm font-medium text-[#C4C2CC] md:text-base">
+                {stat.label}
+              </p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

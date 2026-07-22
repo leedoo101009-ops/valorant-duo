@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@config "../tailwind.config.ts";
 
 :root {
   --black: #000000;
@@ -8,18 +9,52 @@
   --border: #222222;
   --border-strong: #333333;
   --text: #ffffff;
-  --text-muted: #888888;
-  --text-dim: #555555;
+  --text-muted: #c4c2cc;
+  --text-dim: #8a8794;
   --accent: #ff4655;
-  --accent-dim: #cc3844;
+  --accent-dim: #e03a48;
   --blue: #0fbcbf;
+
+  /* Duorant — VALOPLANT 느낌: 숯검정 + 선명한 레드/시안, 칙자 대비 강화 */
+  --duo-ink: #05080b;
+  --duo-dusk: #090e14;
+  --duo-ember: #280b0a;
+  --duo-crimson: #680d06;
+  --duo-accent: #ff4655;
+  --duo-teal: #3de0d0;
+  --duo-teal-deep: #163f3c;
+  --duo-muted: #c4c2cc;
+  --duo-muted-soft: #9b98a6;
+  --duo-border: #3f3d4a;
+  --duo-card: rgba(22, 22, 28, 0.88);
+  --duo-void: #000000;
+  --ease-duo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-float: cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }
 
 @theme inline {
-  --color-background: var(--black);
+  --color-background: var(--duo-ink);
   --color-foreground: var(--text);
-  --font-sans: var(--font-noto);
-  --font-display: var(--font-rajdhani);
+  --color-duo-ink: var(--duo-ink);
+  --color-duo-dusk: var(--duo-dusk);
+  --color-duo-ember: var(--duo-ember);
+  --color-duo-crimson: var(--duo-crimson);
+  --color-duo-accent: var(--duo-accent);
+  --color-duo-teal: var(--duo-teal);
+  --color-duo-teal-deep: var(--duo-teal-deep);
+  --color-duo-muted: var(--duo-muted);
+  --color-duo-muted-soft: var(--duo-muted-soft);
+  --color-duo-border: var(--duo-border);
+  --color-duo-void: var(--duo-void);
+  --font-sans: var(--font-inter), var(--font-noto);
+  --font-body: var(--font-inter), var(--font-noto);
+  /* 영문 헤드라인 = Inter (레퍼런스와 같은 기하학적 sans) */
+  --font-headline: var(--font-bricolage), var(--font-noto);
+  --font-display: var(--font-inter), var(--font-noto);
+  --font-mono: var(--font-jetbrains);
+  --radius-duo: 16px;
+  --ease-duo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-float: cubic-bezier(0.45, 0.05, 0.55, 0.95);
 }
 
 *,
@@ -33,22 +68,149 @@ html {
 }
 
 body {
-  background: var(--black);
+  background: var(--duo-ink);
   color: var(--text);
-  font-family: var(--font-noto), sans-serif;
+  font-family: var(--font-inter), var(--font-noto), system-ui, sans-serif;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 ::selection {
-  background: var(--accent);
+  background: var(--duo-accent);
   color: #fff;
 }
 
-.font-display {
-  font-family: var(--font-rajdhani), sans-serif;
+.font-headline {
+  /* 영문=Bricolage, 한글=Noto */
+  font-family: var(--font-bricolage), var(--font-noto), sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
-/* Map grid background */
+.font-body {
+  font-family: var(--font-inter), var(--font-noto), system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-jetbrains), monospace;
+}
+
+.font-display {
+  font-family: var(--font-inter), var(--font-noto), sans-serif;
+}
+
+/* Hero — 우: 크림슨(유지) / 좌: VALOPLANT 미드 블렌드 딥 시안 */
+.bg-hero-duo {
+  background-color: #05080b;
+  background-image:
+    /* 오른쪽 빨강 — 유지 */
+    radial-gradient(
+      ellipse 95% 90% at 95% 30%,
+      rgba(140, 18, 32, 0.75) 0%,
+      rgba(90, 12, 20, 0.45) 32%,
+      rgba(40, 8, 12, 0.2) 55%,
+      transparent 70%
+    ),
+    /* 왼쪽 — 실측 #082030 / #082838 (맵 라인 쪽 시안 블렌드) */
+    radial-gradient(
+      ellipse 90% 95% at 0% 40%,
+      rgba(8, 32, 48, 0.72) 0%,
+      rgba(8, 28, 40, 0.48) 35%,
+      rgba(5, 14, 22, 0.28) 58%,
+      transparent 72%
+    ),
+    radial-gradient(
+      ellipse 55% 45% at 75% 85%,
+      rgba(100, 15, 28, 0.35) 0%,
+      transparent 70%
+    ),
+    /* 좌하단 — 살짝 더 차가운 시안 (#082838) */
+    radial-gradient(
+      ellipse 50% 50% at 18% 88%,
+      rgba(8, 40, 56, 0.38) 0%,
+      transparent 70%
+    );
+}
+
+/* 그레인 — 어두운 톤 유지 */
+.bg-hero-duo::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0.4;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.45'/%3E%3C/svg%3E");
+  background-size: 220px 220px;
+  z-index: 0;
+}
+
+/* 글래스 카드 */
+.duo-glass-card {
+  border-radius: 14px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  background: rgba(18, 18, 24, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.45);
+}
+
+/* Hero CTA — 레퍼런스처럼 가로 배치용 (폭 고정 해제) */
+.btn-hero-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.9rem 1.35rem;
+  border-radius: 9999px;
+  font-family: var(--font-inter), var(--font-noto), sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--duo-accent);
+  border: 1px solid transparent;
+  cursor: pointer;
+  will-change: transform, filter;
+  box-shadow: 0 8px 28px rgba(255, 70, 85, 0.35);
+  transition:
+    transform 0.25s var(--ease-duo),
+    filter 0.25s var(--ease-duo),
+    box-shadow 0.25s var(--ease-duo);
+}
+
+.btn-hero-primary:hover {
+  filter: brightness(1.1);
+  transform: scale(1.02);
+  box-shadow: 0 10px 32px rgba(255, 70, 85, 0.45);
+}
+
+.btn-hero-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.9rem 1.35rem;
+  border-radius: 9999px;
+  font-family: var(--font-inter), var(--font-noto), sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  will-change: border-color, background;
+  transition:
+    border-color 0.25s var(--ease-duo),
+    background 0.25s var(--ease-duo);
+}
+
+.btn-hero-secondary:hover {
+  border-color: var(--duo-teal);
+  background: rgba(61, 224, 208, 0.08);
+}
+
+/* Map grid background (기존 섹션용) */
 .bg-map-grid {
   background-color: var(--black);
   background-image:
@@ -57,7 +219,6 @@ body {
   background-size: 80px 80px;
 }
 
-/* Solid panel — no glass */
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -69,7 +230,10 @@ body {
 }
 
 .panel-hover {
-  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  transition:
+    transform 0.25s var(--ease-duo),
+    border-color 0.25s var(--ease-duo),
+    box-shadow 0.25s var(--ease-duo);
 }
 
 .panel-hover:hover {
@@ -78,7 +242,6 @@ body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-/* Accent line */
 .accent-line-top {
   border-top: 2px solid var(--accent);
 }
@@ -87,14 +250,13 @@ body {
   border-left: 2px solid var(--accent);
 }
 
-/* Buttons — sharp, no pills */
 .btn-accent {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
   padding: 1rem 2.5rem;
-  font-family: var(--font-rajdhani), sans-serif;
+  font-family: var(--font-inter), var(--font-noto), sans-serif;
   font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -103,7 +265,9 @@ body {
   background: var(--accent);
   border: 1px solid var(--accent);
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
+  transition:
+    background 0.2s var(--ease-duo),
+    border-color 0.2s var(--ease-duo);
 }
 
 .btn-accent:hover {
@@ -117,7 +281,7 @@ body {
   justify-content: center;
   gap: 0.75rem;
   padding: 1rem 2.5rem;
-  font-family: var(--font-rajdhani), sans-serif;
+  font-family: var(--font-inter), var(--font-noto), sans-serif;
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -126,7 +290,10 @@ body {
   background: transparent;
   border: 1px solid var(--border-strong);
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  transition:
+    border-color 0.2s var(--ease-duo),
+    color 0.2s var(--ease-duo),
+    background 0.2s var(--ease-duo);
 }
 
 .btn-outline:hover {
@@ -140,10 +307,10 @@ body {
   background: var(--black);
   border: 1px solid var(--border-strong);
   color: var(--text);
-  font-family: var(--font-noto), sans-serif;
+  font-family: var(--font-inter), var(--font-noto), sans-serif;
   font-size: 0.875rem;
   outline: none;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s var(--ease-duo);
 }
 
 .input-field:focus {
@@ -154,13 +321,12 @@ body {
   color: var(--text-dim);
 }
 
-/* Scroll reveal */
 .reveal {
   opacity: 0;
   transform: translateY(48px);
   transition:
-    opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 0.8s var(--ease-duo),
+    transform 0.8s var(--ease-duo);
 }
 
 .reveal-visible {
@@ -168,7 +334,6 @@ body {
   transform: translateY(0);
 }
 
-/* HUD bar chart */
 .hud-bar {
   height: 4px;
   background: var(--border);
@@ -186,7 +351,6 @@ body {
   background: var(--blue);
 }
 
-/* Scan line decoration */
 @keyframes scan {
   0% {
     transform: translateY(-100%);
@@ -200,7 +364,6 @@ body {
   animation: scan 4s linear infinite;
 }
 
-/* Pulse dot for online */
 @keyframes pulse-dot {
   0%,
   100% {
@@ -218,7 +381,208 @@ body {
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
-/* Scrollbar */
+/* ── Hero motion ── */
+@keyframes duo-float {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes duo-link-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* ── Hero ambient — 어두운 찐한 톤 + VALOPLANT식 드리프트 ── */
+
+@keyframes hero-glow-drift-a {
+  0% {
+    transform: translate3d(0%, 0%, 0) scale(1);
+    opacity: 0.85;
+  }
+  25% {
+    transform: translate3d(-12%, 14%, 0) scale(1.12);
+    opacity: 1;
+  }
+  50% {
+    transform: translate3d(10%, 20%, 0) scale(0.94);
+    opacity: 0.75;
+  }
+  75% {
+    transform: translate3d(-6%, 8%, 0) scale(1.06);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(0%, 0%, 0) scale(1);
+    opacity: 0.85;
+  }
+}
+
+@keyframes hero-glow-drift-b {
+  0% {
+    transform: translate3d(0%, 0%, 0) scale(1.04);
+    opacity: 0.8;
+  }
+  35% {
+    transform: translate3d(14%, -12%, 0) scale(1.14);
+    opacity: 1;
+  }
+  65% {
+    transform: translate3d(-10%, 10%, 0) scale(0.92);
+    opacity: 0.72;
+  }
+  100% {
+    transform: translate3d(0%, 0%, 0) scale(1.04);
+    opacity: 0.8;
+  }
+}
+
+@keyframes hero-glow-drift-c {
+  0% {
+    transform: translate3d(0%, 0%, 0) scale(1);
+    opacity: 0.7;
+  }
+  45% {
+    transform: translate3d(-14%, -8%, 0) scale(1.12);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(0%, 0%, 0) scale(1);
+    opacity: 0.7;
+  }
+}
+
+.hero-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(88px);
+  will-change: transform, opacity;
+  pointer-events: none;
+  /* soft-light: 어두운 베이스 위에서 채도는 살리고 네온감은 줄임 */
+  mix-blend-mode: soft-light;
+}
+
+/* 어두운 크림슨 (실측 #720e06 계열) — 밝은 #ff2d44 대신 */
+.hero-glow-red {
+  top: -22%;
+  right: -18%;
+  width: min(900px, 108vw);
+  height: min(900px, 108vw);
+  background: #8a121c;
+  opacity: 0.9;
+  animation: hero-glow-drift-a 11s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+.hero-glow-red-soft {
+  top: 8%;
+  right: 8%;
+  width: min(600px, 72vw);
+  height: min(600px, 72vw);
+  background: #5c0e14;
+  opacity: 0.85;
+  filter: blur(96px);
+  animation: hero-glow-drift-b 13s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  animation-delay: -2.5s;
+}
+
+/* 왼쪽 — VALOPLANT 미드 블렌드 딥 시안 (실측 #082030) */
+.hero-glow-purple {
+  top: -12%;
+  left: -22%;
+  width: min(880px, 105vw);
+  height: min(880px, 105vw);
+  background: #082030;
+  opacity: 0.92;
+  animation: hero-glow-drift-b 12s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  animation-delay: -4s;
+}
+
+/* 보조 — 살짝 더 밝은 시안 블렌드 (#082838) */
+.hero-glow-blue {
+  bottom: -28%;
+  left: -8%;
+  width: min(760px, 92vw);
+  height: min(760px, 92vw);
+  background: #082838;
+  opacity: 0.88;
+  animation: hero-glow-drift-c 15s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  animation-delay: -7s;
+}
+
+.duo-float {
+  will-change: transform;
+  animation: duo-float 5s var(--ease-float) infinite alternate;
+}
+
+.duo-link-pulse {
+  will-change: opacity;
+  animation: duo-link-pulse 3.5s ease-in-out infinite;
+}
+
+/* 캡션이 바뀔 때 살짝 페이드 (JS step 전환 보조) */
+@keyframes match-caption-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* AI 계산 단계 — 점선 링이 천천히 회전 (연산 중 느낌) */
+@keyframes match-calc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.match-caption {
+  animation: match-caption-in 0.35s ease-out;
+}
+
+.match-calc-ring {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: match-calc-spin 2.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duo-float,
+  .duo-link-pulse,
+  .hero-glow-red,
+  .hero-glow-blue,
+  .hero-glow-purple,
+  .hero-glow-red-soft,
+  .scan-line,
+  .online-dot,
+  .match-caption,
+  .match-calc-ring {
+    animation: none !important;
+  }
+
+  .hero-glow-red,
+  .hero-glow-blue,
+  .hero-glow-purple,
+  .hero-glow-red-soft {
+    transform: none;
+    opacity: 0.85;
+  }
+
+  .btn-hero-primary:hover {
+    transform: none;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 4px;
 }

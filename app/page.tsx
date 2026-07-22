@@ -1,5 +1,6 @@
 import Navbar from "./components/Navbar";
 import HeroSection from "./components/HeroSection";
+import MatchQueueSection from "./components/MatchQueueSection";
 import ShowcaseCards from "./components/ShowcaseCards";
 import FlowSection from "./components/FlowSection";
 import DashboardPreview from "./components/DashboardPreview";
@@ -14,10 +15,11 @@ export default function Home() {
       <Navbar />
       <main>
         <HeroSection />
+        <StatsBar />
+        <MatchQueueSection />
         <ShowcaseCards />
         <FlowSection />
         <DashboardPreview />
-        <StatsBar />
         <CTASection />
       </main>
       <Footer />

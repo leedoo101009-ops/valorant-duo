@@ -5,8 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useLanguage } from "../context/LanguageContext";
-import { createClient } from "@/lib/supabase/client";
-import { ensureProfile } from "@/lib/supabase/profile";
+import { useAuth } from "@/lib/auth/useAuth";
 
 type AuthMode = "login" | "signup";
 
@@ -37,6 +36,7 @@ function LoginForm() {
   const { t } = useLanguage();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { signInWithPassword, signUp, signInWithGoogle } = useAuth();
   const initialMode = searchParams.get("mode") === "signup" ? "signup" : "login";
   const hasAuthError = searchParams.get("error") === "auth";
 
@@ -55,18 +55,11 @@ function LoginForm() {
     setMessage(null);
     setIsError(false);
 
-    const supabase = createClient();
     // Google 로그인 → Supabase가 /auth/callback 으로 돌려보냄
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    const result = await signInWithGoogle();
 
-    if (error) {
+    if (!result.ok) {
       setIsError(true);
-      // Supabase 내부 에러 문구를 그대로 노출하지 않습니다 (설정 정보 힌트 방지)
       setMessage(t.auth.oauthFailed);
       setOauthLoading(false);
     }
@@ -79,26 +72,14 @@ function LoginForm() {
     setMessage(null);
     setIsError(false);
 
-    const supabase = createClient();
-
     if (mode === "signup") {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
+      const result = await signUp(email, password);
 
-      if (error) {
+      if (!result.ok) {
         setIsError(true);
-        setMessage(error.message);
+        setMessage(result.errorMessage ?? t.auth.oauthFailed);
         setLoading(false);
         return;
-      }
-
-      if (data.user) {
-        await ensureProfile(supabase, data.user);
       }
 
       setMessage(t.auth.signupSuccess);
@@ -106,17 +87,13 @@ function LoginForm() {
       return;
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const result = await signInWithPassword(email, password);
 
-    if (error) {
+    if (!result.ok) {
       setIsError(true);
-      setMessage(error.message);
+      setMessage(result.errorMessage ?? t.auth.oauthFailed);
       setLoading(false);
       return;
-    }
-
-    if (data.user) {
-      await ensureProfile(supabase, data.user);
     }
 
     router.push("/");

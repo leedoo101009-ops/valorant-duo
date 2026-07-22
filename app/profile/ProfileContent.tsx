@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import type { PenaltyHistoryResponse, PenaltyRecord } from "@/app/api/match/penalty/history/route";
+import { FormEvent, Suspense, useEffect, useMemo, useRef } from "react";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import ReputationBadge from "../components/ReputationBadge";
 import { useLanguage } from "../context/LanguageContext";
@@ -11,8 +10,10 @@ import { GRADE_STYLES } from "@/lib/reputation/scoring";
 import type { ReviewTagStat, UserReputation } from "@/lib/reputation/types";
 import { getQueueLabel } from "@/lib/riot/agents";
 import { formatValorantTierLabel } from "@/lib/riot/tierLabels";
-import { startDiscordLink } from "@/lib/discord/startDiscordLink";
-import { createClient } from "@/lib/supabase/client";
+import {
+  syncDiscordProfile,
+  useProfileData,
+} from "@/lib/profile/useProfileData";
 import type { Profile } from "@/lib/supabase/profile";
 import type { ValorantMatch } from "@/lib/supabase/valorant";
 
@@ -63,16 +64,12 @@ function DiscordLinkHandler({
     handled.current = true;
 
     async function syncDiscord() {
-      const response = await fetch("/api/discord/sync", { method: "POST" });
-      const data = (await response.json()) as {
-        ok?: boolean;
-        errorKey?: string;
-        discord_username?: string;
-      };
+      // fetch 로직은 useProfileData 쪽 syncDiscordProfile 로 분리
+      const result = await syncDiscordProfile();
 
-      if (!response.ok || !data.ok) {
+      if (!result.ok) {
         const errors = t.profile.discordErrors as Record<string, string>;
-        const key = data.errorKey ?? "save_failed";
+        const key = result.errorKey ?? "save_failed";
         onResult(errors[key] ?? t.profile.discordErrors.save_failed, true);
       } else {
         onResult(t.profile.linkDiscordSuccess, false);
@@ -96,287 +93,71 @@ function ProfileContentInner({
 }: ProfileContentProps) {
   const { t, locale } = useLanguage();
   const router = useRouter();
-  const [profile, setProfile] = useState(initialProfile);
-  const [matches, setMatches] = useState(initialMatches);
-  const [displayName, setDisplayName] = useState(initialProfile.display_name ?? "");
-  const [riotIdInput, setRiotIdInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [linkingRiot, setLinkingRiot] = useState(false);
-  const [unlinkingRiot, setUnlinkingRiot] = useState(false);
-  const [unlinkingDiscord, setUnlinkingDiscord] = useState(false);
-  const [linkingDiscord, setLinkingDiscord] = useState(false);
-  const [syncingMatches, setSyncingMatches] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [isError, setIsError] = useState(false);
-  const [penalties, setPenalties] = useState<PenaltyRecord[]>([]);
-  const [penaltyCount, setPenaltyCount] = useState(0);
-  const [cooldownUntil, setCooldownUntil] = useState<string | null>(null);
-  const [isCoolingDown, setIsCoolingDown] = useState(false);
 
-  const fetchPenalties = useCallback(async () => {
-    try {
-      const res = await fetch("/api/match/penalty/history");
-      if (!res.ok) return;
-      const data = (await res.json()) as PenaltyHistoryResponse;
-      if (data.ok) {
-        setPenalties(data.penalties);
-        setPenaltyCount(data.penaltyCount);
-        setCooldownUntil(data.cooldownUntil);
-        setIsCoolingDown(data.isCoolingDown);
-      }
-    } catch {
-      // 조용히 실패
-    }
-  }, []);
+  const labels = useMemo(
+    () => ({
+      saveFailed: t.profile.saveFailed,
+      saveSuccess: t.profile.saveSuccess,
+      syncAfterLink: t.profile.syncAfterLink,
+      syncNeedRiot: t.profile.syncNeedRiot,
+      syncEmpty: t.profile.syncEmpty,
+      syncSuccessCount: t.profile.syncSuccessCount,
+      unlinkRiotSuccess: t.profile.unlinkRiotSuccess,
+      unlinkDiscordSuccess: t.profile.unlinkDiscordSuccess,
+      unlinkActiveMatch: t.profile.unlinkActiveMatch,
+      unlinkFailed: t.profile.unlinkFailed,
+      linkDiscordSuccess: t.profile.linkDiscordSuccess,
+      riotErrors: t.profile.riotErrors as Record<string, string>,
+      matchErrors: t.profile.matchErrors as Record<string, string>,
+      discordErrors: t.profile.discordErrors as Record<string, string>,
+    }),
+    [t.profile],
+  );
 
-  useEffect(() => {
-    setProfile(initialProfile);
-    setMatches(initialMatches);
-    setDisplayName(initialProfile.display_name ?? "");
-  }, [initialProfile, initialMatches]);
-
-  useEffect(() => {
-    void fetchPenalties();
-  }, [fetchPenalties]);
+  const {
+    profile,
+    matches,
+    displayName,
+    setDisplayName,
+    riotIdInput,
+    setRiotIdInput,
+    loading,
+    linkingRiot,
+    unlinkingRiot,
+    unlinkingDiscord,
+    linkingDiscord,
+    syncingMatches,
+    message,
+    setMessage,
+    isError,
+    setIsError,
+    penalties,
+    penaltyCount,
+    cooldownUntil,
+    isCoolingDown,
+    saveDisplayName,
+    linkRiot,
+    syncMatches,
+    unlinkRiot,
+    linkDiscord,
+    unlinkDiscord,
+  } = useProfileData({
+    initialProfile,
+    initialMatches,
+    labels,
+    onRefresh: () => {
+      router.refresh();
+    },
+  });
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setMessage(null);
-    setIsError(false);
-
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from("profiles")
-      .update({ display_name: displayName.trim() })
-      .eq("id", profile.id)
-      .select(
-        "id, email, display_name, riot_id, discord_username, discord_id, last_match_sync_at, created_at, updated_at",
-      )
-      .single();
-
-    if (error) {
-      setIsError(true);
-      setMessage(t.profile.saveFailed);
-      setLoading(false);
-      return;
-    }
-
-    setProfile(data);
-    setMessage(t.profile.saveSuccess);
-    setLoading(false);
+    await saveDisplayName();
   }
 
   async function handleLinkRiot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLinkingRiot(true);
-    setMessage(null);
-    setIsError(false);
-
-    const response = await fetch("/api/riot/link", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ riotId: riotIdInput }),
-    });
-
-    const data = (await response.json()) as {
-      ok?: boolean;
-      errorKey?: string;
-      message?: string;
-      riot_id?: string;
-      tier?: number | null;
-      rankedRating?: number | null;
-    };
-
-    if (!response.ok || !data.ok) {
-      setIsError(true);
-      const errors = t.profile.riotErrors as Record<string, string>;
-      const key = data.errorKey ?? "server_error";
-      setMessage(errors[key] ?? errors.server_error);
-      setLinkingRiot(false);
-      return;
-    }
-
-    // setState는 비동기라 바로 아래 runMatchSync에서 profile.riot_id가 아직 예전 값일 수 있음
-    const linkedRiotId = data.riot_id ?? profile.riot_id;
-    setProfile((prev) => ({
-      ...prev,
-      riot_id: linkedRiotId,
-      tier: data.tier ?? prev.tier ?? null,
-      ranked_rating: data.rankedRating ?? prev.ranked_rating ?? null,
-    }));
-    setRiotIdInput("");
-    setLinkingRiot(false);
-    setMessage(t.profile.syncAfterLink);
-    setIsError(false);
-    await runMatchSync(false, linkedRiotId);
-    router.refresh();
-  }
-
-  async function runMatchSync(
-    showLoading = true,
-    riotIdOverride?: string | null,
-  ): Promise<boolean> {
-    const hasRiot = Boolean(riotIdOverride ?? profile.riot_id);
-    if (!hasRiot) {
-      setIsError(true);
-      setMessage(t.profile.syncNeedRiot);
-      return false;
-    }
-
-    if (showLoading) {
-      setSyncingMatches(true);
-    }
-    setIsError(false);
-
-    const response = await fetch("/api/valorant/sync", { method: "POST" });
-    const data = (await response.json()) as {
-      ok?: boolean;
-      errorKey?: string;
-      warningKey?: string;
-      retryAfterSec?: number;
-      inserted?: number;
-      fetched?: number;
-      total?: number;
-      matches?: ValorantMatch[];
-      lastMatchSyncAt?: string;
-      tier?: number | null;
-      rankedRating?: number | null;
-    };
-
-    if (!response.ok || !data.ok) {
-      setIsError(true);
-      const errors = t.profile.matchErrors as Record<string, string>;
-      const key = data.errorKey ?? "server_error";
-      let message = errors[key] ?? errors.server_error;
-      if ((key === "sync_cooldown" || key === "rate_limit") && data.retryAfterSec) {
-        message = `${message} (${data.retryAfterSec}s)`;
-      }
-      setMessage(message);
-      if (showLoading) {
-        setSyncingMatches(false);
-      }
-      return false;
-    }
-
-    if (Array.isArray(data.matches)) {
-      setMatches(data.matches);
-    }
-
-    setProfile((prev) => ({
-      ...prev,
-      last_match_sync_at: data.lastMatchSyncAt ?? prev.last_match_sync_at ?? null,
-      tier: data.tier !== undefined ? data.tier : prev.tier,
-      ranked_rating:
-        data.rankedRating !== undefined ? data.rankedRating : prev.ranked_rating,
-    }));
-
-    if ((data.total ?? 0) === 0) {
-      setMessage(t.profile.syncEmpty);
-    } else {
-      const count = data.fetched ?? data.total ?? 0;
-      const base = t.profile.syncSuccessCount.replace("{count}", String(count));
-      // 일부만 가져온 경우(한도)에도 성공으로 보여 주되 안내를 붙입니다.
-      if (data.warningKey === "rate_limit") {
-        setMessage(`${base} ${t.profile.matchErrors.rate_limit}`);
-      } else {
-        setMessage(base);
-      }
-    }
-
-    if (showLoading) {
-      setSyncingMatches(false);
-    }
-    return true;
-  }
-
-  async function handleSyncMatches() {
-    setMessage(null);
-    setSyncingMatches(true); // 클릭 즉시 버튼 문구 변경
-    const ok = await runMatchSync(true);
-    if (ok) {
-      void router.refresh();
-    }
-  }
-
-  async function handleUnlinkRiot() {
-    if (!profile.riot_id) return;
-    setUnlinkingRiot(true);
-    setMessage(null);
-    setIsError(false);
-
-    // 클릭 즉시 UI에서 해제된 것처럼 보이게
-    const snapshot = profile;
-    setProfile((prev) => ({
-      ...prev,
-      riot_id: null,
-      tier: null,
-      ranked_rating: null,
-    }));
-    setMessage(t.profile.unlinkRiotSuccess);
-
-    const response = await fetch("/api/riot/unlink", { method: "POST" });
-    const data = (await response.json()) as { ok?: boolean; errorKey?: string };
-
-    if (!response.ok || !data.ok) {
-      setProfile(snapshot);
-      setIsError(true);
-      if (data.errorKey === "active_match_exists") {
-        setMessage(t.profile.unlinkActiveMatch);
-      } else {
-        setMessage(t.profile.unlinkFailed);
-      }
-      setUnlinkingRiot(false);
-      return;
-    }
-
-    setUnlinkingRiot(false);
-    void router.refresh();
-  }
-
-  // 클릭 즉시 "이동 중…" → 브라우저에서 Discord OAuth (우리 API 우회)
-  async function handleLinkDiscord() {
-    setLinkingDiscord(true);
-    setMessage(null);
-    setIsError(false);
-
-    const result = await startDiscordLink("/profile?discord_linked=1");
-    if (!result.ok && result.errorKey !== "login_required") {
-      setLinkingDiscord(false);
-      setIsError(true);
-      const errors = t.profile.discordErrors as Record<string, string>;
-      setMessage(errors[result.errorKey ?? "authorize_failed"] ?? errors.authorize_failed);
-    }
-    // ok면 Discord로 페이지 이동 — 버튼 상태는 그대로 두어도 됨
-  }
-
-  async function handleUnlinkDiscord() {
-    if (!profile.discord_username) return;
-    setUnlinkingDiscord(true);
-    setMessage(null);
-    setIsError(false);
-
-    const snapshot = profile;
-    setProfile((prev) => ({ ...prev, discord_username: null, discord_id: null }));
-    setMessage(t.profile.unlinkDiscordSuccess);
-
-    const response = await fetch("/api/discord/unlink", { method: "POST" });
-    const data = (await response.json()) as { ok?: boolean; errorKey?: string };
-
-    if (!response.ok || !data.ok) {
-      setProfile(snapshot);
-      setIsError(true);
-      if (data.errorKey === "active_match_exists") {
-        setMessage(t.profile.unlinkActiveMatch);
-      } else {
-        setMessage(t.profile.unlinkFailed);
-      }
-      setUnlinkingDiscord(false);
-      return;
-    }
-
-    setUnlinkingDiscord(false);
-    void router.refresh();
+    await linkRiot();
   }
 
   return (
@@ -426,7 +207,7 @@ function ProfileContentInner({
                   {profile.riot_id ? (
                     <button
                       type="button"
-                      onClick={() => void handleUnlinkRiot()}
+                      onClick={() => void unlinkRiot()}
                       disabled={unlinkingRiot}
                       className="font-display text-[10px] tracking-widest text-[#888] underline transition-colors hover:text-[#ff4655] disabled:opacity-50"
                     >
@@ -481,7 +262,7 @@ function ProfileContentInner({
                   {profile.discord_username ? (
                     <button
                       type="button"
-                      onClick={() => void handleUnlinkDiscord()}
+                      onClick={() => void unlinkDiscord()}
                       disabled={unlinkingDiscord}
                       className="font-display text-[10px] tracking-widest text-[#888] underline transition-colors hover:text-[#ff4655] disabled:opacity-50"
                     >
@@ -515,7 +296,7 @@ function ProfileContentInner({
             {!profile.discord_username && (
               <button
                 type="button"
-                onClick={() => void handleLinkDiscord()}
+                onClick={() => void linkDiscord()}
                 disabled={linkingDiscord}
                 className="btn-outline mt-5 flex w-full !py-3 disabled:opacity-50"
               >
@@ -699,7 +480,7 @@ function ProfileContentInner({
                 </div>
                 <button
                   type="button"
-                  onClick={handleSyncMatches}
+                  onClick={() => void syncMatches()}
                   disabled={syncingMatches}
                   className="btn-accent shrink-0 !px-4 !py-2 text-xs disabled:opacity-50"
                 >

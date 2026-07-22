@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
 import { useLanguage } from "../context/LanguageContext";
-import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/auth/useAuth";
 import MatchInGamePanel from "./MatchInGamePanel";
 import MatchGuidelinesModal from "./MatchGuidelinesModal";
 import MatchReviewModal from "./MatchReviewModal";
@@ -125,8 +124,7 @@ export default function MatchQueueControls({
   const busy = (action: NonNullable<PendingAction>) => pendingAction === action;
   const { t } = useLanguage();
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+  const { user, authReady } = useAuth();
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
   const [lastErrorKey, setLastErrorKey] = useState<string | null>(null);
@@ -135,23 +133,6 @@ export default function MatchQueueControls({
   const [showGuidelinesModal, setShowGuidelinesModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [discordRedirecting, setDiscordRedirecting] = useState(false);
-
-  useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      setAuthReady(true);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
 
   useEffect(() => {
     if (status.pendingReview) {
