@@ -249,10 +249,8 @@ export default function MatchNetworkIllustration({
             vectorEffect="non-scaling-stroke"
           />
           <foreignObject x="72" y="92" width="416" height="52">
-            <div
-              xmlns="http://www.w3.org/1999/xhtml"
-              className="match-illust-text flex h-full items-center justify-center px-4"
-            >
+            {/* React/TS에서 div에 xmlns 못 씀 → 제거 (foreignObject 안 HTML은 그대로 동작) */}
+            <div className="match-illust-text flex h-full items-center justify-center px-4">
               <span
                 key={step}
                 className="match-caption font-body text-center text-[15px] font-bold leading-none tracking-tight md:text-[16px]"
