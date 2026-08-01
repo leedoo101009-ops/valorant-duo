@@ -90,6 +90,7 @@ export function useAuth() {
   }
 
   // Google OAuth — 성공 시 브라우저가 Google로 이동하므로 호출측에서 loading을 끄지 않음
+  // 동의 기록은 /auth/callback 에서 미기록 유저에게만 RPC로 남김 (idempotent)
   async function signInWithGoogle(): Promise<AuthActionResult> {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({

@@ -13,7 +13,7 @@ export default function LanguageSwitcher() {
 
   return (
     <div
-      className="flex border border-[#333] bg-[#111]"
+      className="inline-flex overflow-hidden rounded-full border border-white/15 bg-white/[0.06] p-0.5"
       role="group"
       aria-label="Language"
     >
@@ -24,10 +24,10 @@ export default function LanguageSwitcher() {
             key={option.value}
             type="button"
             onClick={() => setLocale(option.value)}
-            className={`px-3 py-2 font-display text-[10px] tracking-[0.2em] transition-colors ${
+            className={`rounded-full px-3 py-1.5 font-body text-[11px] font-bold tracking-[0.14em] transition-colors duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] ${
               active
-                ? "bg-[#ff4655] text-white"
-                : "text-[#888] hover:text-white"
+                ? "bg-[#FF4655] text-white shadow-[0_4px_14px_rgba(255,70,85,0.35)]"
+                : "text-[#8B8894] hover:text-[#F5F5F7]"
             }`}
             aria-pressed={active}
           >

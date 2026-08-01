@@ -6,10 +6,12 @@
 //   → 매칭 규칙을 바꿀 때 DB를 안 건드리고 이 파일만 수정하면 됩니다.
 //
 // 계층적 조건 (요구사항):
-//   1) 하드 조건 — 무조건 만족 (티어 범위, 큐 활성 상태)
+//   1) 하드 조건 — 무조건 만족 (티어 범위, 큐 활성, duo_goal 호환)
+//      duo_goal: 빡겜↔즐겜만 불가, any/null은 통과
 //   2) 소프트 조건 — AI 분석 기반 가산점 (공격성 상호보완, 역할 비겹침)
 //      + premium이면 match_prefs 힌트로 후보 순위만 더 세밀하게 (거절 필터 아님)
 //   3) 시간 완화 — 오래 기다릴수록 소프트 조건을 점점 무시하고 매칭을 성사시킴
+//      (하드 조건은 시간이 지나도 완화되지 않음)
 
 import {
   scorePrefsAgainstPartner,
@@ -48,6 +50,9 @@ const SOFT_HALF_UNTIL_SEC = 60; // 30~60초: 소프트 50%, 이후: 0%
 
 // ─── 타입 ────────────────────────────────────────────────
 
+// 온보딩 목표 — profiles.duo_goal 과 동일
+export type DuoGoal = "rank_up" | "casual_duo" | "any";
+
 export type MatchProfile = {
   id: string;
   // 랭크 단계 인덱스 (예: Iron1=0 ... Radiant=N). null이면 티어 미설정 → 티어 조건 건너뜀.
@@ -60,6 +65,8 @@ export type MatchProfile = {
   plan: "free" | "premium";
   playstyleTags: string[];
   matchPrefs: MatchPrefs | null;
+  // 온보딩 목표. null이면 예전 유저 → any처럼 취급
+  duoGoal: DuoGoal | null;
 };
 
 export type MatchResult = {
@@ -82,9 +89,37 @@ function withinTierRange(a: MatchProfile, b: MatchProfile): boolean {
   return Math.abs(a.tier - b.tier) <= TIER_RANGE;
 }
 
-// 하드 조건: 둘 다 활성 + 티어 범위 내. 하나라도 실패하면 매칭 불가.
+// null/이상한 값 → any (상관없음). 예전 유저도 매칭에서 안 막히게.
+function normalizeDuoGoal(goal: DuoGoal | null | undefined): DuoGoal {
+  if (goal === "rank_up" || goal === "casual_duo" || goal === "any") {
+    return goal;
+  }
+  return "any";
+}
+
+// 빡겜↔즐겜만 불가. any는 양쪽 모두 OK.
+//   rank_up ↔ rank_up ✅ / casual ↔ casual ✅
+//   any ↔ * ✅ / rank_up ↔ casual ❌
+export function isDuoGoalCompatible(
+  a: DuoGoal | null | undefined,
+  b: DuoGoal | null | undefined,
+): boolean {
+  const ga = normalizeDuoGoal(a);
+  const gb = normalizeDuoGoal(b);
+  if (ga === "any" || gb === "any") {
+    return true;
+  }
+  return ga === gb;
+}
+
+// 하드 조건: 활성 + 티어 범위 + 듀오 목표 호환. 하나라도 실패하면 매칭 불가.
 export function passesHardConditions(a: MatchProfile, b: MatchProfile): boolean {
-  return isActive(a) && isActive(b) && withinTierRange(a, b);
+  return (
+    isActive(a) &&
+    isActive(b) &&
+    withinTierRange(a, b) &&
+    isDuoGoalCompatible(a.duoGoal, b.duoGoal)
+  );
 }
 
 // ─── 소프트 조건 (시너지 점수) ───────────────────────────

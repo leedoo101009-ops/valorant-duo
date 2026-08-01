@@ -8,7 +8,7 @@ import ReputationBadge from "../components/ReputationBadge";
 import { useLanguage } from "../context/LanguageContext";
 import { GRADE_STYLES } from "@/lib/reputation/scoring";
 import type { ReviewTagStat, UserReputation } from "@/lib/reputation/types";
-import { getQueueLabel } from "@/lib/riot/agents";
+import { getMapDisplayName, getQueueLabel } from "@/lib/riot/agents";
 import { formatValorantTierLabel } from "@/lib/riot/tierLabels";
 import {
   syncDiscordProfile,
@@ -500,7 +500,7 @@ function ProfileContentInner({
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-medium text-white">
-                            {match.map_name} · {match.agent_name}
+                            {getMapDisplayName(match.map_name)} · {match.agent_name}
                           </p>
                           <p className="mt-1 font-display text-[10px] tracking-widest text-[#555]">
                             {getQueueLabel(match.queue_id)} ·{" "}

@@ -36,11 +36,54 @@ export function getAgentName(characterId: string): string {
   return AGENT_NAMES[characterId] ?? "Unknown";
 }
 
-// mapId 예: "/Game/Maps/Ascent/Ascent" → "Ascent"
+/**
+ * Riot mapId 경로의 마지막 조각(내부 코드명) → 공식 영문 맵명
+ * 예: Bonsai → Split, Jam → Lotus
+ * 이미 공식명이거나 모르는 코드는 그대로 둡니다.
+ */
+export const MAP_CODE_TO_NAME: Record<string, string> = {
+  Ascent: "Ascent",
+  Duality: "Bind",
+  Bonsai: "Split",
+  Triad: "Haven",
+  Port: "Icebox",
+  Foxtrot: "Breeze",
+  Canyon: "Fracture",
+  Pitt: "Pearl",
+  Jam: "Lotus",
+  Juliett: "Sunset",
+  Plummet: "Abyss",
+  Rook: "Corrode",
+  // 연습/특수
+  Range: "The Range",
+  // 이미 공식명으로 저장된 경우도 통과용으로 넣어 둠
+  Bind: "Bind",
+  Split: "Split",
+  Haven: "Haven",
+  Icebox: "Icebox",
+  Breeze: "Breeze",
+  Fracture: "Fracture",
+  Pearl: "Pearl",
+  Lotus: "Lotus",
+  Sunset: "Sunset",
+  Abyss: "Abyss",
+  Corrode: "Corrode",
+};
+
+/** DB에 저장된 map_name(코드명 또는 공식명) → UI 표시용 공식명 */
+export function getMapDisplayName(mapName: string): string {
+  if (!mapName) return "Unknown";
+  return MAP_CODE_TO_NAME[mapName] ?? mapName;
+}
+
+// mapId 예: "/Game/Maps/Bonsai/Bonsai" → "Split"
 export function parseMapName(mapId: string): string {
   const parts = mapId.split("/").filter(Boolean);
   const last = parts.at(-1);
-  return last && last.length > 0 ? last : "Unknown";
+  if (!last) return "Unknown";
+  // Skirmish_A 같은 접미사도 앞 코드만 매핑 시도
+  const code = last.split("_")[0] ?? last;
+  return MAP_CODE_TO_NAME[last] ?? MAP_CODE_TO_NAME[code] ?? last;
 }
 
 // queueId → UI 표시용 라벨 (원본 queue_id는 DB에 그대로 저장)

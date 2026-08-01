@@ -298,6 +298,21 @@ export async function handleQueuePost(request: Request): Promise<Response> {
 
   const admin = createAdminClient();
 
+  // 온보딩 미완료면 큐 입장 차단 (클라 게이트 레이스와 무관하게 서버에서 막음)
+  // 컬럼이 아직 없으면(null) 기존 유저로 보고 통과 — 032 미적용 환경 호환
+  const { data: onboardingRow } = await admin
+    .from("profiles")
+    .select("onboarding_completed")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (onboardingRow && onboardingRow.onboarding_completed === false) {
+    return Response.json(
+      { ok: false, errorKey: "onboarding_required" },
+      { status: 403 },
+    );
+  }
+
   await admin.rpc("touch_presence", { p_user_id: user.id });
 
   const shard = await ensureValorantShard(admin, user.id);

@@ -8,7 +8,11 @@
 // best-effort: 실패해도 예외를 밖으로 던지지 않습니다. 큐 등록/상태 조회를 막으면 안 되므로.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { findBestMatch, type MatchProfile } from "@/lib/matching/matcher";
+import {
+  findBestMatch,
+  type DuoGoal,
+  type MatchProfile,
+} from "@/lib/matching/matcher";
 import { sanitizeMatchPrefs } from "@/lib/matching/matchPrefs";
 import { normalizePlan } from "@/lib/analysis/scheduler";
 
@@ -23,7 +27,15 @@ type CandidateRow = {
   plan: string | null;
   playstyle_tags: unknown;
   match_prefs: unknown;
+  duo_goal: string | null;
 };
+
+function parseDuoGoal(raw: unknown): DuoGoal | null {
+  if (raw === "rank_up" || raw === "casual_duo" || raw === "any") {
+    return raw;
+  }
+  return null;
+}
 
 export type SmartMatchResult = {
   matched: boolean;
@@ -52,6 +64,7 @@ function toMatchProfile(row: CandidateRow): MatchProfile {
     plan,
     playstyleTags: parsePlaystyleTags(row.playstyle_tags),
     matchPrefs,
+    duoGoal: parseDuoGoal(row.duo_goal),
   };
 }
 

@@ -1,38 +1,33 @@
 import type { Metadata } from "next";
 import Providers from "./components/Providers";
 import {
-  Bricolage_Grotesque,
   Inter,
   JetBrains_Mono,
   Noto_Sans_KR,
 } from "next/font/google";
 import "./globals.css";
 
-// 헤드라인 영문 — Bricolage Grotesque (스펙)
-const bricolage = Bricolage_Grotesque({
-  variable: "--font-bricolage",
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-});
-
-// 본문 영문 — Inter
+// 본문 + 헤드라인 영문 — Inter (또렷하고 무게 400~900 지원)
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800", "900"],
+  display: "swap",
 });
 
-// 한글 — Bricolage/Inter에 한글 글리프 없음 → Noto fallback
+// 한글 — Inter에 한글 글리프 없음 → Noto fallback
 const notoSansKR = Noto_Sans_KR({
   variable: "--font-noto",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "900"],
+  display: "swap",
 });
 
 const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -50,7 +45,7 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
-      className={`${bricolage.variable} ${inter.variable} ${notoSansKR.variable} ${jetbrains.variable} h-full scroll-smooth antialiased`}
+      className={`${inter.variable} ${notoSansKR.variable} ${jetbrains.variable} h-full scroll-smooth antialiased`}
     >
       <body className="flex min-h-full flex-col bg-[#05080b] font-body text-white">
         <Providers>{children}</Providers>

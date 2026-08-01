@@ -41,6 +41,13 @@ export default function Footer() {
           </span>
         </div>
       </div>
+
+      {/* 라이엇 게임즈 법적 고지 — KO/EN 언어 전환과 동일하게 t 사용 */}
+      <div className="mx-auto mt-6 max-w-[1400px] border-t border-[#1a1a1a] px-6 pt-5 lg:px-12">
+        <p className="text-[11px] leading-relaxed text-[#444]">
+          {t.footer.riotDisclaimer}
+        </p>
+      </div>
     </footer>
   );
 }

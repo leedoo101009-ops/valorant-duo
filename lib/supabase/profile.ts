@@ -2,6 +2,8 @@
 // riot_puuid는 서버 전용 — 브라우저로 보내지 않습니다.
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+export type DuoGoal = "rank_up" | "casual_duo" | "any";
+
 export type Profile = {
   id: string;
   email: string | null;
@@ -18,6 +20,16 @@ export type Profile = {
   tier?: number | null;
   /** Valorant 경쟁전 RR */
   ranked_rating?: number | null;
+  /** 온보딩 목표: rank_up | casual_duo | any */
+  duo_goal?: DuoGoal | null;
+  /** 라이엇 연동 여부 (표시용). 실제 키는 riot_id */
+  riot_linked?: boolean | null;
+  /** 온보딩 완료(스킵 포함) */
+  onboarding_completed?: boolean | null;
+  /** 약관 동의 시각 (ISO). null이면 미기록 */
+  terms_accepted_at?: string | null;
+  /** 동의한 약관 버전 (예: 2026-08-01) */
+  terms_version?: string | null;
   created_at: string;
   updated_at: string;
 };

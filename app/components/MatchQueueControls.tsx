@@ -924,6 +924,15 @@ export default function MatchQueueControls({
           {t.matchQueue.goProfile}
         </Link>
       )}
+
+      {lastErrorKey === "onboarding_required" && (
+        <Link
+          href="/onboarding"
+          className="font-display text-xs tracking-widest text-[#888] underline hover:text-white"
+        >
+          {t.matchQueue.goOnboarding}
+        </Link>
+      )}
     </div>
   );
 }

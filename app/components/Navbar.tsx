@@ -37,30 +37,36 @@ export default function Navbar() {
           : "border-b border-transparent bg-transparent"
       }`}
     >
-      <nav className="mx-auto flex h-16 max-w-[1280px] items-center justify-between px-6 md:h-20 lg:px-12">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-[#FF4655] font-headline text-sm font-black text-white">
+      {/* 로고는 화면 왼쪽에 더 붙이고, 오른쪽 메뉴만 기존 여백 유지 */}
+      <nav className="flex h-20 w-full items-center justify-between pl-3 pr-6 md:h-24 md:pl-4 lg:pr-12">
+        <Link href="/" className="flex shrink-0 items-center gap-3">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-md bg-[#FF4655] font-headline text-lg font-black text-white md:h-12 md:w-12 md:text-xl">
             D
           </span>
-          <span className="font-headline text-xl font-extrabold tracking-tight text-white md:text-2xl">
+          <span className="font-headline text-2xl font-extrabold tracking-tight text-white md:text-3xl">
             Duorant
           </span>
         </Link>
 
-        <div className="hidden items-center gap-5 md:flex">
+        <div className="hidden items-center gap-3 md:flex lg:gap-4">
           <LanguageSwitcher />
           {authReady && user ? (
             <>
+              {/* 프로필 진입 — 글래스 칩 (랜딩 secondary 톤) */}
               <Link
                 href="/profile"
-                className="max-w-[120px] truncate font-body text-sm font-medium text-white/90 transition-colors duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:text-white"
+                className="group inline-flex max-w-[180px] items-center gap-2.5 rounded-full border border-white/15 bg-white/[0.06] py-1.5 pr-4 pl-1.5 font-body text-sm font-semibold text-[#F5F5F7] transition-[border-color,background,color] duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-[#3DE0D0]/55 hover:bg-[rgba(61,224,208,0.08)]"
+                title={t.nav.profile}
               >
-                {emailLabel}
+                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#3DE0D0]/15 font-headline text-[11px] font-bold text-[#3DE0D0]">
+                  {(emailLabel[0] ?? "?").toUpperCase()}
+                </span>
+                <span className="truncate">{emailLabel}</span>
               </Link>
               <button
                 type="button"
                 onClick={handleLogout}
-                className="rounded-full border border-white/20 bg-white/5 px-5 py-2.5 font-body text-sm font-semibold text-white transition-[border-color,background] duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-[#3DE0D0] hover:bg-white/10"
+                className="rounded-full border border-white/15 bg-white/[0.06] px-5 py-2.5 font-body text-sm font-semibold text-[#F5F5F7] transition-[border-color,background] duration-[250ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-[#3DE0D0]/55 hover:bg-[rgba(61,224,208,0.08)]"
               >
                 {t.nav.logout}
               </button>
@@ -101,15 +107,18 @@ export default function Navbar() {
               <>
                 <Link
                   href="/profile"
-                  className="font-body text-sm font-medium text-white"
+                  className="inline-flex items-center gap-2.5 rounded-full border border-white/15 bg-white/[0.06] py-2 pr-4 pl-2 font-body text-sm font-semibold text-[#F5F5F7]"
                   onClick={() => setOpen(false)}
                 >
-                  {t.nav.profile}: {user.email}
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#3DE0D0]/15 font-headline text-[11px] font-bold text-[#3DE0D0]">
+                    {(emailLabel[0] ?? "?").toUpperCase()}
+                  </span>
+                  <span className="truncate">{emailLabel}</span>
                 </Link>
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="rounded-full border border-white/20 px-5 py-3 font-body text-sm font-semibold text-white"
+                  className="rounded-full border border-white/15 bg-white/[0.06] px-5 py-3 font-body text-sm font-semibold text-[#F5F5F7]"
                 >
                   {t.nav.logout}
                 </button>

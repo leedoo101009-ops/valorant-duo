@@ -8,10 +8,12 @@ import StatsBar from "./components/StatsBar";
 import CTASection from "./components/CTASection";
 import Footer from "./components/Footer";
 import SupabaseStatus from "./components/SupabaseStatus";
+import OnboardingGate from "./components/OnboardingGate";
 
 export default function Home() {
   return (
     <>
+      <OnboardingGate />
       <Navbar />
       <main>
         <HeroSection />
