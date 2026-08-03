@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLanguage } from "../context/LanguageContext";
 import { useAuth } from "@/lib/auth/useAuth";
+import { clearOnboardingGateCache } from "@/lib/onboarding/gateCache";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 export default function Navbar() {
@@ -21,6 +22,8 @@ export default function Navbar() {
   }, []);
 
   async function handleLogout() {
+    // 다음 로그인 때 Gate가 옛 완료 캐시를 쓰지 않게
+    if (user) clearOnboardingGateCache(user.id);
     await signOut();
     setOpen(false);
     router.push("/");

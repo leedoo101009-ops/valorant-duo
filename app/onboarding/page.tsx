@@ -5,6 +5,10 @@ import { FormEvent, useEffect, useState } from "react";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { useLanguage } from "../context/LanguageContext";
 import { useAuth } from "@/lib/auth/useAuth";
+import {
+  clearOnboardingGateCache,
+  setOnboardingGateCache,
+} from "@/lib/onboarding/gateCache";
 import type { DuoGoal } from "@/lib/onboarding/types";
 
 type Step = 1 | 2;
@@ -12,7 +16,7 @@ type Step = 1 | 2;
 export default function OnboardingPage() {
   const { t } = useLanguage();
   const router = useRouter();
-  const { user, authReady } = useAuth();
+  const { user, authReady, signOut } = useAuth();
 
   const [step, setStep] = useState<Step>(1);
   const [duoGoal, setDuoGoal] = useState<DuoGoal | null>(null);
@@ -45,6 +49,8 @@ export default function OnboardingPage() {
         if (cancelled) return;
 
         if (data.onboardingCompleted) {
+          // 이미 완료된 계정 — Gate도 fetch 없이 통과하도록 캐시
+          setOnboardingGateCache(user.id, true);
           router.replace("/");
           return;
         }
@@ -97,6 +103,8 @@ export default function OnboardingPage() {
 
   async function handleLinkRiot(event: FormEvent) {
     event.preventDefault();
+    // 이미 요청 중이면 연타 무시
+    if (loading) return;
     if (!statsConsent) {
       setIsError(true);
       setMessage(t.onboarding.consentRequired);
@@ -106,6 +114,8 @@ export default function OnboardingPage() {
     setLoading(true);
     setMessage(null);
     setIsError(false);
+    // 성공 후 페이지 이동 중에는 loading을 유지해 중복 제출을 막음
+    let succeeded = false;
 
     try {
       const linkRes = await fetch("/api/riot/link", {
@@ -142,21 +152,26 @@ export default function OnboardingPage() {
         return;
       }
 
+      // Gate가 옛 false 캐시로 다시 쫓아오지 않게 완료 상태를 먼저 심음
+      if (user) setOnboardingGateCache(user.id, true);
+      succeeded = true;
       router.replace("/#match");
       router.refresh();
     } catch {
       setIsError(true);
       setMessage(t.onboarding.linkFailed);
     } finally {
-      // 이동이 느려도 버튼이 멈춘 것처럼 보이지 않게 로딩 해제
-      setLoading(false);
+      if (!succeeded) setLoading(false);
     }
   }
 
   async function handleSkipRiot() {
+    if (loading) return;
+
     setLoading(true);
     setMessage(null);
     setIsError(false);
+    let succeeded = false;
 
     try {
       const res = await fetch("/api/onboarding", {
@@ -172,6 +187,8 @@ export default function OnboardingPage() {
         return;
       }
 
+      if (user) setOnboardingGateCache(user.id, true);
+      succeeded = true;
       // 매칭은 홈에서 가능하지만, riot 없으면 큐 API가 riot_required로 막음
       router.replace("/");
       router.refresh();
@@ -179,8 +196,16 @@ export default function OnboardingPage() {
       setIsError(true);
       setMessage(t.onboarding.saveFailed);
     } finally {
-      setLoading(false);
+      if (!succeeded) setLoading(false);
     }
+  }
+
+  // 잘못 가입했거나 다른 계정으로 하고 싶을 때 — 홈으로 빠져나가지 않고 세션만 끊음
+  async function handleSignOut() {
+    if (loading) return;
+    if (user) clearOnboardingGateCache(user.id);
+    await signOut();
+    router.replace("/login");
   }
 
   const goalOptions: { value: DuoGoal; label: string }[] = [
@@ -376,7 +401,16 @@ export default function OnboardingPage() {
             </button>
           </>
         )}
-        {/* 온보딩 중 「홈으로」는 제거 — 중간에 빠져나가면 목표가 반쯤만 저장된 채 방황하기 쉬움 */}
+
+        {/* 홈 탈출 대신 로그아웃만 제공 — 다른 계정으로 다시 시작 가능 */}
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void handleSignOut()}
+          className="mt-8 font-body text-sm font-medium text-[#555] transition-colors hover:text-[#8B8894] disabled:opacity-50"
+        >
+          {t.nav.logout}
+        </button>
       </div>
     </div>
   );
