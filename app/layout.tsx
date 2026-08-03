@@ -31,6 +31,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  // 공유 미리보기·SEO 절대 URL 기준 (오픈그래프 등)
+  metadataBase: new URL("https://duorant.com"),
   title: "Duorant — Real-Time Valorant Duo Matching",
   description:
     "AI-powered playstyle analysis and real-time duo matching for Valorant players.",
@@ -45,6 +47,8 @@ export default function RootLayout({
   return (
     <html
       lang="ko"
+      // Next.js 페이지 전환 시 smooth scroll 경고 방지
+      data-scroll-behavior="smooth"
       className={`${inter.variable} ${notoSansKR.variable} ${jetbrains.variable} h-full scroll-smooth antialiased`}
     >
       <body className="flex min-h-full flex-col bg-[#05080b] font-body text-white">
