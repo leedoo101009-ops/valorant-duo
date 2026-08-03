@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -127,7 +126,6 @@ export default function OnboardingPage() {
             t.profile.riotErrors[key as keyof typeof t.profile.riotErrors]) ||
             t.onboarding.linkFailed,
         );
-        setLoading(false);
         return;
       }
 
@@ -141,7 +139,6 @@ export default function OnboardingPage() {
       if (!doneRes.ok || !doneData.ok) {
         setIsError(true);
         setMessage(t.onboarding.saveFailed);
-        setLoading(false);
         return;
       }
 
@@ -150,6 +147,8 @@ export default function OnboardingPage() {
     } catch {
       setIsError(true);
       setMessage(t.onboarding.linkFailed);
+    } finally {
+      // 이동이 느려도 버튼이 멈춘 것처럼 보이지 않게 로딩 해제
       setLoading(false);
     }
   }
@@ -170,7 +169,6 @@ export default function OnboardingPage() {
       if (!res.ok || !data.ok) {
         setIsError(true);
         setMessage(t.onboarding.saveFailed);
-        setLoading(false);
         return;
       }
 
@@ -180,6 +178,7 @@ export default function OnboardingPage() {
     } catch {
       setIsError(true);
       setMessage(t.onboarding.saveFailed);
+    } finally {
       setLoading(false);
     }
   }
@@ -362,6 +361,10 @@ export default function OnboardingPage() {
             >
               {t.onboarding.skipRiot}
             </button>
+            {/* 스킵해도 매칭은 막힌다는 점을 미리 알려 줌 (큐에서 갑자기 실패하지 않게) */}
+            <p className="mt-2 text-center font-body text-[12px] leading-relaxed text-[#555]">
+              {t.onboarding.skipRiotHint}
+            </p>
 
             <button
               type="button"
@@ -373,13 +376,7 @@ export default function OnboardingPage() {
             </button>
           </>
         )}
-
-        <Link
-          href="/"
-          className="mt-8 inline-block font-body text-sm font-medium text-[#555] hover:text-[#8B8894]"
-        >
-          ← {t.auth.backHome}
-        </Link>
+        {/* 온보딩 중 「홈으로」는 제거 — 중간에 빠져나가면 목표가 반쯤만 저장된 채 방황하기 쉬움 */}
       </div>
     </div>
   );

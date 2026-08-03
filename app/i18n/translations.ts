@@ -294,13 +294,16 @@ export const translations = {
       next: "Continue",
       back: "Back",
       riotTitle: "Link your Riot account",
-      riotSubtitle: "Required before matching. You can skip for now.",
+      riotSubtitle:
+        "Matching needs a Riot account. You can skip and browse, then link later in Profile.",
       riotIdLabel: "Riot ID",
       statsConsent:
         "I agree to make my custom game / match stats available for duo matching analysis.",
       consentRequired: "Please check the consent box to link your account.",
       linkRiot: "Link Riot account",
       skipRiot: "Maybe later",
+      // 스킵 = 온보딩만 끝남. 큐 입장은 여전히 라이엇 필요
+      skipRiotHint: "Skipping means you can’t join the match queue until you link Riot in Profile.",
       saveFailed: "Could not save. Please try again.",
       linkFailed: "Could not link Riot account. Please try again.",
     },
@@ -861,13 +864,17 @@ export const translations = {
       next: "다음",
       back: "이전",
       riotTitle: "라이엇 계정 연동",
-      riotSubtitle: "매칭 전에 필요해요. 지금은 건너뛸 수도 있어요.",
+      riotSubtitle:
+        "매칭하려면 라이엇 연동이 필요해요. 지금은 건너뛰고 둘러본 뒤, 프로필에서 나중에 연동할 수 있어요.",
       riotIdLabel: "라이엇 ID",
       statsConsent:
         "커스텀 매치·전적 통계를 듀오 매칭 분석에 사용하는 데 동의합니다.",
       consentRequired: "연동하려면 동의 체크가 필요해요.",
       linkRiot: "라이엇 계정 연동",
       skipRiot: "나중에 할게요",
+      // 스킵 = 온보딩만 끝남. 큐 입장은 여전히 라이엇 필요
+      skipRiotHint:
+        "나중에 하면 홈은 볼 수 있지만, 프로필에서 라이엇을 연동하기 전에는 매칭 큐에 들어갈 수 없어요.",
       saveFailed: "저장에 실패했어요. 다시 시도해 주세요.",
       linkFailed: "라이엇 연동에 실패했어요. 다시 시도해 주세요.",
     },
